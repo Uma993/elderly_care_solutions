@@ -1,0 +1,20 @@
+[
+  {
+    "id": "1769523838872",
+    "fullName": "Dexter Morgan",
+    "email": "dexter.morgan@sample.com",
+    "password": "dexmorg123",
+    "role": "family",
+    "phone": "123456789",
+    "relation": "son"
+  },
+  {
+    "id": "1769533519161",
+    "fullName": "Brian Moser",
+    "email": "brian.moser@example.com",
+    "password": "brianmoser123",
+    "role": "elderly",
+    "phone": "9485758469",
+    "relation": ""
+  }
+]

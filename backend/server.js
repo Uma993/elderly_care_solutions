@@ -1,0 +1,26 @@
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+
+const authRoutes = require('./routes/auth');
+
+const app = express();
+const PORT = process.env.PORT || 4000;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Routes
+app.use('/api/auth', authRoutes);
+
+// Basic health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Elderly care backend running' });
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`Elderly care backend listening on http://localhost:${PORT}`);
+});
+
