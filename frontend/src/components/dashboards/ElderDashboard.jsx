@@ -1,11 +1,43 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Button from '../ui/Button.jsx';
 import Tag from '../ui/Tag.jsx';
-import { medicineReminders } from '../../mock/elderData.js';
+import { colors } from '../../design/tokens';
+import { getElderDashboardData } from '../../firebase/dashboardData.js';
 
-function ElderDashboard({ currentUser, onLogout }) {
+function ElderDashboard({ currentUser, token, onLogout }) {
   const [takenToday, setTakenToday] = useState({});
   const [sosSent, setSosSent] = useState(false);
+  const [medicines, setMedicines] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function load() {
+      try {
+        const data = await getElderDashboardData(currentUser.id, token);
+        if (!isMounted || !data) return;
+        if (Array.isArray(data.medicines) && data.medicines.length > 0) {
+          setMedicines(
+            data.medicines.map((m) => ({
+              id: m.id,
+              name: m.title || m.name || 'Medicine',
+              dosage: m.details || m.dosage || '',
+              times: Array.isArray(m.times) ? m.times : [m.time || '']
+            }))
+          );
+        }
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn('ElderDashboard: could not load medicines from Firestore', error);
+      }
+    }
+
+    load();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser.id, token]);
 
   const toggleTaken = (id) => {
     setTakenToday((prev) => ({
@@ -22,7 +54,7 @@ function ElderDashboard({ currentUser, onLogout }) {
   return (
     <div>
       <h2 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Good day, {currentUser.fullName}</h2>
-      <p style={{ marginTop: 0, marginBottom: '1.25rem', color: '#9ca3af' }}>
+      <p style={{ marginTop: 0, marginBottom: '1.25rem', color: colors.textMuted }}>
         Here are your medicines for today and a quick help button if you feel unwell.
       </p>
 
@@ -33,20 +65,24 @@ function ElderDashboard({ currentUser, onLogout }) {
         </div>
 
         <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {medicineReminders.map((m) => {
+          {medicines.length === 0 && (
+            <p style={{ color: colors.textMuted, fontSize: '0.95rem' }}>No medicines added yet. Add them in your profile or ask a family member.</p>
+          )}
+          {medicines.map((m) => {
             const isTaken = !!takenToday[m.id];
             return (
               <button
                 key={m.id}
                 type="button"
+                className="hover-card"
                 onClick={() => toggleTaken(m.id)}
                 style={{
                   textAlign: 'left',
                   borderRadius: '0.9rem',
                   padding: '0.8rem 0.9rem',
-                  border: '1px solid rgba(148,163,184,0.35)',
-                  background: isTaken ? 'rgba(22,163,74,0.12)' : 'rgba(15,23,42,0.7)',
-                  color: '#e5e7eb',
+                  border: `1px solid ${colors.borderSubtle}`,
+                  background: isTaken ? colors.successBg : colors.surfaceSoft,
+                  color: colors.text,
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
@@ -68,7 +104,7 @@ function ElderDashboard({ currentUser, onLogout }) {
 
       <section style={{ marginBottom: '1.5rem' }}>
         <h3 style={{ marginTop: 0 }}>Need quick help?</h3>
-        <p style={{ marginTop: '0.2rem', marginBottom: '0.9rem', color: '#9ca3af' }}>
+        <p style={{ marginTop: '0.2rem', marginBottom: '0.9rem', color: colors.textMuted }}>
           If you suddenly feel unwell, press the SOS button so your family can check on you.
         </p>
         <Button variant="danger" onClick={handleSOS}>

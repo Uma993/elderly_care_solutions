@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { createUser } = require('../models/user');
 
 const dataFilePath = path.join(__dirname, 'users.json');
@@ -25,7 +26,7 @@ function findByEmail(email) {
 
 function createNewUser({ fullName, email, password, role, phone, relation }) {
   const users = readUsers();
-  const id = String(Date.now());
+  const id = crypto.randomUUID();
   const user = createUser({ id, fullName, email, password, role, phone, relation });
   users.push(user);
   writeUsers(users);
@@ -38,4 +39,3 @@ module.exports = {
   findByEmail,
   createNewUser
 };
-

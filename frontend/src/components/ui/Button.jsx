@@ -12,13 +12,13 @@ const baseStyle = {
   fontSize: typography.baseSize,
   fontWeight: 600,
   cursor: 'pointer',
-  transition: 'background 0.15s ease, transform 0.05s ease',
+  transition: 'background 0.2s ease, box-shadow 0.2s ease',
   marginTop: spacing.md
 };
 
-function Button({ children, variant = 'primary', disabled, style, ...rest }) {
+function Button({ children, variant = 'primary', disabled, style, className, ...rest }) {
   let background = colors.primary;
-  let color = colors.surfaceSoft;
+  let color = '#ffffff';
 
   if (variant === 'secondary') {
     background = 'transparent';
@@ -42,7 +42,13 @@ function Button({ children, variant = 'primary', disabled, style, ...rest }) {
   };
 
   return (
-    <button type="button" {...rest} disabled={disabled} style={computedStyle}>
+    <button
+      type="button"
+      className={`btn btn-${variant} ${className || ''}`.trim()}
+      {...rest}
+      disabled={disabled}
+      style={computedStyle}
+    >
       {children}
     </button>
   );

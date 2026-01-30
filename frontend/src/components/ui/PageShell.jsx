@@ -9,7 +9,7 @@ function PageShell({ title, subtitle, children, actions }) {
     alignItems: 'center',
     justifyContent: 'flex-start',
     padding: `${spacing['2xl']} ${spacing.md}`,
-    background: `radial-gradient(circle at top, #1d4ed8 0, ${colors.background} 50%, #020617 100%)`,
+    background: `linear-gradient(180deg, ${colors.background} 0%, ${colors.surfaceSoft} 100%)`,
     color: colors.text,
     fontFamily: typography.fontFamily
   };

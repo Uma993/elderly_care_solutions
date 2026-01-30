@@ -1,0 +1,14 @@
+{
+  "name": "elderly-care-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "dev": "cross-env ELECTRON_DEV=1 electron .",
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "electron": "^33.0.0"
+  }
+}

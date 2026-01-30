@@ -41,3 +41,8 @@ backend/*.log
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+
+#firebase
+frontend/.env.local
+backend/elder-care-solutions-firebase-adminsdk-fbsvc-7e997ad95c.json
+backend/.env

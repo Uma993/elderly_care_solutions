@@ -1,0 +1,26 @@
+rules_version = '2';
+// Node is the only authority for user creation. Backend creates users/{userId} via Admin SDK.
+// Frontend may only read/update the document for request.auth.uid (after signInWithCustomToken).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      // Owner can read/update. Linked family members can read (for family dashboard).
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        request.auth.uid in resource.data.get('linkedFamilyIds', [])
+      );
+      allow update: if request.auth != null && request.auth.uid == userId;
+      // Block user creation from frontend; only backend (Admin SDK) creates users.
+      allow create: if false;
+      allow delete: if false;
+      // Subcollections (e.g. users/{userId}/medicines): same user can read/write their own.
+      match /{subcollection}/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    // Deny all other collections from client by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

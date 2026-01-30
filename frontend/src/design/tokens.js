@@ -1,19 +1,21 @@
+// Bright warm sunset + cool accent; visible, stylish, elder-friendly
 export const colors = {
-  background: '#0f172a',
-  surface: '#0b1220',
-  surfaceSoft: '#111827',
-  primary: '#38bdf8',
-  primarySoft: '#0ea5e9',
-  accent: '#a855f7',
-  text: '#e5e7eb',
-  textMuted: '#9ca3af',
-  borderSubtle: '#1f2937',
-  successBg: '#022c22',
-  successText: '#6ee7b7',
-  errorBg: '#450a0a',
-  errorText: '#fecaca',
-  warningBg: '#2b1500',
-  warningText: '#fed7aa'
+  background: '#fef6e6',
+  surface: '#ffffff',
+  surfaceSoft: '#f5f0fa',
+  primary: '#2563eb',
+  primarySoft: '#1e40af',
+  primaryHover: '#1d4ed8',
+  accent: '#5b21b6',
+  text: '#0f172a',
+  textMuted: '#334155',
+  borderSubtle: '#94a3b8',
+  successBg: '#dcfce7',
+  successText: '#166534',
+  errorBg: '#fee2e2',
+  errorText: '#b91c1c',
+  warningBg: '#fef3c7',
+  warningText: '#b45309'
 };
 
 export const radii = {
@@ -33,9 +35,8 @@ export const spacing = {
 
 export const typography = {
   fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-  baseSize: '18px',
+  baseSize: '20px',
   heading1: '2.1rem',
   heading2: '1.6rem',
   heading3: '1.25rem'
 };
-

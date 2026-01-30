@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Button from './ui/Button.jsx';
 
 function RegisterForm({ apiBaseUrl, onRegistered }) {
   const [fullName, setFullName] = useState('');
@@ -170,9 +171,9 @@ function RegisterForm({ apiBaseUrl, onRegistered }) {
 
       {error && <p className="error-message">{error}</p>}
 
-      <button className="primary-button" type="submit" disabled={loading}>
+      <Button type="submit" disabled={loading} style={{ minHeight: '52px', fontSize: '1.15rem', marginTop: '0.5rem' }}>
         {loading ? 'Registering…' : 'Create account'}
-      </button>
+      </Button>
     </form>
   );
 }

@@ -8,8 +8,8 @@ function Card({ children, style }) {
     background: colors.surface,
     borderRadius: radii.card,
     padding: spacing['2xl'],
-    boxShadow: '0 24px 60px rgba(0,0,0,0.65)',
-    border: `1px solid ${colors.borderSubtle}`,
+    boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+    border: '1px solid #f0e6d8',
     ...style
   };
 

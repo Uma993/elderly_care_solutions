@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Button from './ui/Button.jsx';
 
 function LoginForm({ apiBaseUrl, onSuccess }) {
   const [email, setEmail] = useState('');
@@ -29,7 +30,7 @@ function LoginForm({ apiBaseUrl, onSuccess }) {
       if (!response.ok) {
         setError(data.message || 'Login failed. Please try again.');
       } else {
-        onSuccess?.(data.user, data.message);
+        onSuccess?.(data.user, data.message, data.token);
       }
     } catch (err) {
       setError('Unable to reach the server. Please try again later.');
@@ -64,9 +65,9 @@ function LoginForm({ apiBaseUrl, onSuccess }) {
 
       {error && <p className="error-message">{error}</p>}
 
-      <button className="primary-button" type="submit" disabled={loading}>
-        {loading ? 'Logging in…' : 'Login'}
-      </button>
+      <Button type="submit" disabled={loading} style={{ minHeight: '52px', fontSize: '1.15rem', marginTop: '0.5rem' }}>
+        {loading ? 'Logging in…' : 'Log in'}
+      </Button>
     </form>
   );
 }
