@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Button from '../ui/Button.jsx';
 import Tag from '../ui/Tag.jsx';
+import PasskeyRegister from '../PasskeyRegister.jsx';
 import { colors } from '../../design/tokens';
 import { getElderDashboardData } from '../../firebase/dashboardData.js';
 import { API_BASE_URL, getAuthHeaders } from '../../api';
@@ -230,6 +231,7 @@ function ElderDashboard({ currentUser, token, onLogout }) {
         )}
       </section>
 
+      <PasskeyRegister token={token} />
       <Button variant="secondary" onClick={onLogout}>
         Log out
       </Button>

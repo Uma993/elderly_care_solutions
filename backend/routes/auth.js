@@ -120,5 +120,6 @@ router.post('/firebase-token', requireAuth, async (req, res) => {
 module.exports = router;
 module.exports.issueJwt = issueJwt;
 module.exports.requireAuth = requireAuth;
+module.exports.sanitizeUser = sanitizeUser;
 module.exports.JWT_SECRET = JWT_SECRET;
 

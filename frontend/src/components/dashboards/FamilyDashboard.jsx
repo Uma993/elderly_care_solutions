@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Button from '../ui/Button.jsx';
 import Tag from '../ui/Tag.jsx';
+import PasskeyRegister from '../PasskeyRegister.jsx';
 import { colors } from '../../design/tokens';
 import { API_BASE_URL, getAuthHeaders } from '../../api';
 import { getFamilyDashboardData } from '../../firebase/dashboardData.js';
@@ -750,6 +751,7 @@ function FamilyDashboard({ currentUser, token, onLogout }) {
         </div>
       </section>
 
+      <PasskeyRegister token={token} />
       <Button variant="secondary" onClick={onLogout}>
         Log out
       </Button>

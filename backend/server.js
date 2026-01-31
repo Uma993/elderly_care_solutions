@@ -4,6 +4,7 @@ const cors = require('cors');
 const path = require('path');
 
 const authRoutes = require('./routes/auth');
+const webauthnRoutes = require('./routes/webauthn');
 const usersRoutes = require('./routes/users');
 const eldersRoutes = require('./routes/elders');
 const sosRoutes = require('./routes/sos');
@@ -17,6 +18,7 @@ app.use(express.json());
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/auth/webauthn', webauthnRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/elders', eldersRoutes);
 app.use('/api/sos', sosRoutes);
