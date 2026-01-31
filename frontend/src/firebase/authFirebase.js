@@ -14,7 +14,7 @@ let signInPromise = null;
  * Fetches a Firebase custom token from the backend and signs in.
  * Idempotent: if already signed in with the same session, resolves immediately.
  * @param {string|null|undefined} jwt - JWT from Node login
- * @returns {Promise<void>} Resolves when signed in, or when token/API unavailable (caller can fall back to mock)
+ * @returns {Promise<void>} Resolves when signed in, or when token/API unavailable
  */
 export async function ensureSignedIn(jwt) {
   if (!jwt || !auth) return;

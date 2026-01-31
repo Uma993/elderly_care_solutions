@@ -5,6 +5,8 @@ const path = require('path');
 
 const authRoutes = require('./routes/auth');
 const usersRoutes = require('./routes/users');
+const eldersRoutes = require('./routes/elders');
+const sosRoutes = require('./routes/sos');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -16,6 +18,8 @@ app.use(express.json());
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/elders', eldersRoutes);
+app.use('/api/sos', sosRoutes);
 
 // Basic health check
 app.get('/api/health', (req, res) => {

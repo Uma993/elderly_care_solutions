@@ -1,14 +1,5 @@
 [
   {
-    "id": "17885a99-219a-449f-b43f-dce4d2e276b6",
-    "fullName": "Rohit Sharma",
-    "email": "rohit.sharma@example.com",
-    "password": "rohit.sharma123",
-    "role": "elderly",
-    "phone": "9876543210",
-    "relation": ""
-  },
-  {
     "id": "e106e864-a0e2-46d5-a8aa-6b0de66c905c",
     "fullName": "Ram Kumar",
     "email": "ram.kumar@example.com",

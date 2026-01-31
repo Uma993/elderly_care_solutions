@@ -4,6 +4,7 @@
   box-sizing: border-box;
 }
 
+/* Light theme – values aligned with design/tokens.js */
 body {
   margin: 0;
   color: #0f172a;

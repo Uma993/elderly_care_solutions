@@ -8,6 +8,7 @@ import Button from './components/ui/Button.jsx';
 import Tag from './components/ui/Tag.jsx';
 import ElderDashboard from './components/dashboards/ElderDashboard.jsx';
 import FamilyDashboard from './components/dashboards/FamilyDashboard.jsx';
+import PWAInstall from './components/PWAInstall.jsx';
 
 function App() {
   const [activeTab, setActiveTab] = useState('login'); // 'login' | 'register'
@@ -74,6 +75,7 @@ function App() {
       subtitle="A calm, simple space for elderly users and their families."
     >
       <Card>
+        <PWAInstall />
         <div className="auth-actions">
           <Button
             variant={activeTab === 'login' ? 'primary' : 'secondary'}

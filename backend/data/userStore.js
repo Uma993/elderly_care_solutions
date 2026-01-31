@@ -19,9 +19,21 @@ function writeUsers(users) {
   fs.writeFileSync(dataFilePath, JSON.stringify(users, null, 2), 'utf8');
 }
 
+function normalizePhone(phone) {
+  if (typeof phone !== 'string') return '';
+  return phone.replace(/\D/g, '');
+}
+
 function findByEmail(email) {
   const users = readUsers();
   return users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+}
+
+function findByPhone(phone) {
+  const users = readUsers();
+  const normalized = normalizePhone(phone);
+  if (!normalized) return null;
+  return users.find((u) => normalizePhone(u.phone || '') === normalized) || null;
 }
 
 function createNewUser({ fullName, email, password, role, phone, relation }) {
@@ -37,5 +49,7 @@ module.exports = {
   readUsers,
   writeUsers,
   findByEmail,
+  findByPhone,
+  normalizePhone,
   createNewUser
 };
