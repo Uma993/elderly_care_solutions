@@ -4,8 +4,10 @@ A web app for elders and family members: elder dashboard (medicines, tasks, SOS)
 
 ## Setup and run
 
-- **Backend:** `cd backend && npm install && npm run dev` (default port 4000). Set `.env` with `GOOGLE_APPLICATION_CREDENTIALS`, `JWT_SECRET`, and optionally `WEBAUTHN_RP_ID`.
+- **Backend:** `cd backend && npm install && npm run dev` (default port 4000). Set `.env` with `GOOGLE_APPLICATION_CREDENTIALS`, `JWT_SECRET`, optionally `WEBAUTHN_RP_ID`, and `GEMINI_API_KEY` (get a free key at [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)).
 - **Frontend:** `cd frontend && npm install && npm run dev` (Vite default, e.g. http://localhost:5173).
+
+AI (voice assistant, daily tips, optimize schedule, simplify text) uses Google Gemini (free tier). Voice input and output use the browser’s microphone and speech synthesis.
 
 ## WebAuthn (passkey) testing notes
 

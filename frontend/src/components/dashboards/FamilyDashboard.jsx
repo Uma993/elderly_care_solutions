@@ -1,10 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { doc, onSnapshot } from 'firebase/firestore';
 import Button from '../ui/Button.jsx';
 import Tag from '../ui/Tag.jsx';
 import PasskeyRegister from '../PasskeyRegister.jsx';
+import PushSubscribe from '../PushSubscribe.jsx';
 import { colors } from '../../design/tokens';
 import { API_BASE_URL, getAuthHeaders } from '../../api';
 import { getFamilyDashboardData } from '../../firebase/dashboardData.js';
+import { db } from '../../firebase/config.js';
+import { ensureSignedIn } from '../../firebase/authFirebase.js';
 
 const LOAD_ERROR_MESSAGE =
   "Could not load elder. Make sure you're linked: your elder's profile must list you as family.";
@@ -27,6 +32,14 @@ function FamilyDashboard({ currentUser, token, onLogout }) {
   const [taskForm, setTaskForm] = useState({ title: '', description: '', time: '' });
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [taskLoading, setTaskLoading] = useState(false);
+  const [flashAlert, setFlashAlert] = useState(null);
+  const [scheduleSuggestions, setScheduleSuggestions] = useState([]);
+  const [scheduleExplanation, setScheduleExplanation] = useState('');
+  const [optimizeLoading, setOptimizeLoading] = useState(false);
+  const [simplifyResult, setSimplifyResult] = useState(null);
+  const prevSosIdsByElder = useRef({});
+  const sosUnsubscribesRef = useRef([]);
+  const defaultTitle = 'Elderly Care';
 
   useEffect(() => {
     let isMounted = true;
@@ -54,6 +67,69 @@ function FamilyDashboard({ currentUser, token, onLogout }) {
       isMounted = false;
     };
   }, [currentUser.id, token, refreshTrigger]);
+
+  // Real-time SOS: listen to linked elders' docs and show flash overlay on new SOS
+  useEffect(() => {
+    if (!db || elders.length === 0 || !token) return;
+    sosUnsubscribesRef.current = [];
+    (async () => {
+      try {
+        await ensureSignedIn(token);
+      } catch {
+        return;
+      }
+      const unsubs = [];
+      elders.forEach((elder) => {
+        const elderId = elder.id;
+        const elderName = elder.name || 'Elder';
+        const unsub = onSnapshot(doc(db, 'users', elderId), (snap) => {
+          const data = snap.exists() ? snap.data() : {};
+          const sosAlerts = Array.isArray(data.sosAlerts) ? data.sosAlerts : [];
+          const prevIds = prevSosIdsByElder.current[elderId] || new Set();
+          const newAlerts = sosAlerts.filter((a) => a.id && !prevIds.has(a.id));
+          prevSosIdsByElder.current[elderId] = new Set(sosAlerts.map((a) => a.id).filter(Boolean));
+          if (newAlerts.length > 0) {
+            const alert = newAlerts[newAlerts.length - 1];
+            setFlashAlert({
+              id: alert.id,
+              time: alert.time,
+              elderName: alert.elderName || elderName,
+              elderId,
+              location: alert.location
+            });
+            document.title = `SOS – ${alert.elderName || elderName} needs help`;
+            if (typeof navigator.vibrate === 'function') {
+              navigator.vibrate([500, 200, 500, 200, 500, 200, 1000]);
+            }
+            try {
+              const ctx = new (window.AudioContext || window.webkitAudioContext)();
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.type = 'sine';
+              const t0 = ctx.currentTime;
+              osc.frequency.setValueAtTime(600, t0);
+              osc.frequency.setValueAtTime(1200, t0 + 0.15);
+              osc.frequency.setValueAtTime(600, t0 + 0.3);
+              osc.frequency.setValueAtTime(1200, t0 + 0.45);
+              osc.frequency.setValueAtTime(600, t0 + 0.6);
+              gain.gain.setValueAtTime(0.35, t0);
+              gain.gain.exponentialRampToValueAtTime(0.01, t0 + 0.9);
+              osc.start(t0);
+              osc.stop(t0 + 0.9);
+            } catch (_) {}
+          }
+        });
+        unsubs.push(unsub);
+      });
+      sosUnsubscribesRef.current = unsubs;
+    })();
+    return () => {
+      sosUnsubscribesRef.current.forEach((fn) => typeof fn === 'function' && fn());
+      sosUnsubscribesRef.current = [];
+    };
+  }, [elders, token]);
 
   const selectedElder = elders.find((e) => e.id === selectedElderId) || elders[0] || null;
   const allSosAlerts = elders.flatMap((e) => (e.sosAlerts || []).map((a) => ({ ...a, elderName: a.elderName || e.name || 'Elder', elderId: e.id }))).sort((a, b) => (b.time || '').localeCompare(a.time || ''));
@@ -193,6 +269,67 @@ function FamilyDashboard({ currentUser, token, onLogout }) {
     }
   };
 
+  const handleOptimizeSchedule = async () => {
+    if (medicines.length === 0 || !token) return;
+    setOptimizeLoading(true);
+    setScheduleSuggestions([]);
+    setScheduleExplanation('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/ai/optimize-schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
+        body: JSON.stringify({
+          medicines: medicines.map((m) => ({ id: m.id, name: m.name, time: m.time || '' }))
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(data.suggestions)) {
+        setScheduleSuggestions(data.suggestions);
+        setScheduleExplanation(data.explanation || '');
+      }
+    } catch (_) {}
+    setOptimizeLoading(false);
+  };
+
+  const handleApplySchedule = async () => {
+    if (!selectedElderId || scheduleSuggestions.length === 0) return;
+    setMedicineLoading(true);
+    try {
+      for (const s of scheduleSuggestions) {
+        const m = medicines.find((med) => med.id === s.id);
+        if (!m || !s.suggestedTime) continue;
+        await fetch(`${API_BASE_URL}/elders/${selectedElderId}/medicines/${s.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
+          body: JSON.stringify({
+            name: m.name,
+            dosage: m.dosage || '',
+            time: s.suggestedTime,
+            notes: m.notes || ''
+          })
+        });
+      }
+      setScheduleSuggestions([]);
+      setScheduleExplanation('');
+      setRefreshTrigger((t) => t + 1);
+    } catch (_) {}
+    setMedicineLoading(false);
+  };
+
+  const handleSimplifyTask = async (text) => {
+    if (!text || !text.trim() || !token) return;
+    setSimplifyResult(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/ai/simplify-text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
+        body: JSON.stringify({ text: text.trim() })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.simplified) setSimplifyResult({ original: text, simplified: data.simplified });
+    } catch (_) {}
+  };
+
   const handleAddTask = async (e) => {
     e?.preventDefault();
     if (!selectedElderId || !taskForm.title.trim()) return;
@@ -304,8 +441,95 @@ function FamilyDashboard({ currentUser, token, onLogout }) {
     }));
   };
 
+  const dismissFlash = () => {
+    setFlashAlert(null);
+    document.title = defaultTitle;
+  };
+
+  const navigate = useNavigate();
+  const flashAlertLocation = flashAlert?.location;
+  const hasLocation = flashAlertLocation?.lat != null && flashAlertLocation?.lng != null;
+  const mapUrl = hasLocation
+    ? `https://www.google.com/maps?q=${encodeURIComponent(flashAlertLocation.lat)},${encodeURIComponent(flashAlertLocation.lng)}`
+    : null;
+  const sosPageUrl = flashAlert
+    ? `/sos-alert?alertId=${encodeURIComponent(flashAlert.id || '')}&elderId=${encodeURIComponent(flashAlert.elderId || '')}&elderName=${encodeURIComponent(flashAlert.elderName || 'Elder')}&time=${encodeURIComponent(flashAlert.time || '')}${hasLocation ? `&lat=${encodeURIComponent(flashAlertLocation.lat)}&lng=${encodeURIComponent(flashAlertLocation.lng)}` : ''}`
+    : '/';
+
   return (
     <div>
+      {flashAlert && (
+        <div
+          role="alert"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'linear-gradient(180deg, #8b0000 0%, #4a0000 100%)',
+            color: '#fff',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '2rem',
+            textAlign: 'center',
+            boxSizing: 'border-box'
+          }}
+        >
+          <h2 style={{ margin: '0 0 0.5rem', fontSize: 'clamp(1.5rem, 5vw, 2.25rem)' }}>SOS</h2>
+          <p style={{ margin: '0 0 0.5rem', fontSize: 'clamp(1.1rem, 3vw, 1.4rem)' }}>
+            {flashAlert.elderName} needs help
+          </p>
+          {flashAlert.time && (
+            <p style={{ margin: '0 0 0.75rem', fontSize: '1rem', opacity: 0.9 }}>
+              Time: {new Date(flashAlert.time).toLocaleString()}
+            </p>
+          )}
+          {hasLocation && (
+            <p style={{ margin: '0 0 0.5rem', fontSize: '0.95rem' }}>
+              Location: {flashAlertLocation.lat}, {flashAlertLocation.lng}
+            </p>
+          )}
+          {mapUrl && (
+            <a
+              href={mapUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-block',
+                padding: '0.6rem 1.2rem',
+                background: '#fff',
+                color: '#8b0000',
+                borderRadius: '8px',
+                fontWeight: 600,
+                textDecoration: 'none',
+                marginBottom: '1rem'
+              }}
+            >
+              Open in map
+            </a>
+          )}
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <Button
+              variant="primary"
+              onClick={() => {
+                dismissFlash();
+                navigate(sosPageUrl);
+              }}
+              style={{ minHeight: '44px' }}
+            >
+              View
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={dismissFlash}
+              style={{ minHeight: '44px', color: '#fff', borderColor: '#fff' }}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      )}
       <h2 style={{ marginTop: 0, marginBottom: '0.5rem' }}>
         Welcome, {currentUser.fullName}
       </h2>
@@ -558,12 +782,75 @@ function FamilyDashboard({ currentUser, token, onLogout }) {
               </div>
             ))}
           </div>
+          {scheduleSuggestions.length > 0 && (
+            <div
+              className="hover-card"
+              style={{
+                marginTop: '1rem',
+                padding: '1rem',
+                border: `1px solid ${colors.borderSubtle}`,
+                borderRadius: '0.9rem',
+                background: colors.surfaceSoft
+              }}
+            >
+              <h4 style={{ margin: '0 0 0.5rem', fontSize: '1.05rem' }}>Suggested times</h4>
+              {scheduleExplanation && (
+                <p style={{ margin: '0 0 0.75rem', fontSize: '0.95rem', color: colors.textMuted }}>{scheduleExplanation}</p>
+              )}
+              <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.98rem' }}>
+                {scheduleSuggestions.map((s) => (
+                  <li key={s.id}>
+                    <strong>{s.name}</strong>: {s.suggestedTime || '—'}
+                  </li>
+                ))}
+              </ul>
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                <Button onClick={handleApplySchedule} disabled={medicineLoading}>
+                  {medicineLoading ? 'Applying…' : 'Apply'}
+                </Button>
+                <Button variant="secondary" onClick={() => { setScheduleSuggestions([]); setScheduleExplanation(''); }}>
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
       {selectedElderId && (
         <section style={{ marginBottom: '1.5rem' }}>
           <h3 style={{ marginTop: 0 }}>Tasks</h3>
+          {simplifyResult && (
+            <div
+              className="hover-card"
+              style={{
+                marginBottom: '1rem',
+                padding: '0.75rem 1rem',
+                border: `1px solid ${colors.borderSubtle}`,
+                borderRadius: '0.5rem',
+                background: colors.surfaceSoft,
+                fontSize: '0.95rem'
+              }}
+            >
+              <div style={{ marginBottom: '0.5rem', color: colors.textMuted }}>Simplified description:</div>
+              <p style={{ margin: '0 0 0.5rem', color: colors.text }}>{simplifyResult.simplified}</p>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setTaskForm((f) => ({ ...f, description: simplifyResult.simplified }));
+                    setSimplifyResult(null);
+                  }}
+                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.9rem' }}
+                >
+                  Use in description
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setSimplifyResult(null)} style={{ padding: '0.35rem 0.75rem', fontSize: '0.9rem' }}>
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          )}
           <form
             onSubmit={handleAddTask}
             style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', maxWidth: '24rem' }}
@@ -575,13 +862,24 @@ function FamilyDashboard({ currentUser, token, onLogout }) {
               onChange={(e) => setTaskForm((f) => ({ ...f, title: e.target.value }))}
               style={{ padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem' }}
             />
-            <input
-              type="text"
-              placeholder="Description (optional)"
-              value={taskForm.description}
-              onChange={(e) => setTaskForm((f) => ({ ...f, description: e.target.value }))}
-              style={{ padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem' }}
-            />
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input
+                type="text"
+                placeholder="Description (optional)"
+                value={taskForm.description}
+                onChange={(e) => setTaskForm((f) => ({ ...f, description: e.target.value }))}
+                style={{ flex: 1, padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem' }}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => handleSimplifyTask(taskForm.description)}
+                disabled={!taskForm.description.trim()}
+                style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem' }}
+              >
+                Simplify
+              </Button>
+            </div>
             <input
               type="text"
               placeholder="Time (e.g. 9:00 AM)"
@@ -628,7 +926,26 @@ function FamilyDashboard({ currentUser, token, onLogout }) {
               >
                 <div>
                   <div style={{ fontWeight: 600 }}>{t.title || 'Task'}</div>
-                  {t.description && <div style={{ fontSize: '0.9rem', color: colors.textMuted }}>{t.description}</div>}
+                  {t.description && (
+                    <div style={{ fontSize: '0.9rem', color: colors.textMuted, display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <span>{t.description}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleSimplifyTask(t.description)}
+                        style={{
+                          padding: '0.2rem 0.5rem',
+                          fontSize: '0.8rem',
+                          border: `1px solid ${colors.borderSubtle}`,
+                          borderRadius: '0.35rem',
+                          background: 'transparent',
+                          cursor: 'pointer',
+                          color: colors.textMuted
+                        }}
+                      >
+                        Simplify
+                      </button>
+                    </div>
+                  )}
                   <div style={{ fontSize: '0.9rem', color: colors.textMuted }}>{t.time || '—'} {t.completed && <Tag tone="success">Done</Tag>}</div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -752,6 +1069,7 @@ function FamilyDashboard({ currentUser, token, onLogout }) {
       </section>
 
       <PasskeyRegister token={token} />
+      <PushSubscribe token={token} />
       <Button variant="secondary" onClick={onLogout}>
         Log out
       </Button>

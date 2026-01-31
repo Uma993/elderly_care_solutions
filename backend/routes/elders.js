@@ -1,9 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const webPush = require('web-push');
 const { requireAuth } = require('./auth');
 const {
   getLinkedElderIds,
+  getLinkedFamilyIds,
+  getElderName,
   getElderMedicines,
   setElderMedicines,
   appendMedicineIntakeLog,
@@ -12,6 +15,13 @@ const {
   completeElderTask,
   isConfigured
 } = require('../services/firebase');
+const { getSubscriptionsByUserId } = require('../data/pushSubscriptions');
+
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
+if (vapidPublicKey && vapidPrivateKey) {
+  webPush.setVapidDetails('mailto:support@elderlycare.example', vapidPublicKey, vapidPrivateKey);
+}
 
 /** Middleware: require caller to be family and elderId in linkedElderIds */
 async function requireFamilyLinkedElder(req, res, next) {
@@ -153,6 +163,27 @@ router.post('/:elderId/medicines/:medicineId/taken', requireAuth, requireElderSe
       medicineName,
       time: req.body?.time || undefined
     });
+    if (vapidPublicKey && vapidPrivateKey && medicineName) {
+      const elderName = await getElderName(elderId);
+      const familyIds = await getLinkedFamilyIds(elderId);
+      const title = 'Medicine taken';
+      const body = `${elderName} took ${medicineName}.`;
+      const payload = JSON.stringify({
+        type: 'medicine',
+        title,
+        body,
+        url: '/',
+        data: { url: '/', type: 'medicine', elderId, medicineId, medicineName }
+      });
+      for (const familyUserId of familyIds) {
+        const subs = getSubscriptionsByUserId(familyUserId);
+        for (const { subscription } of subs) {
+          webPush.sendNotification(subscription, payload).catch((pushErr) => {
+            console.warn('Medicine-taken push failed for', familyUserId, pushErr.message);
+          });
+        }
+      }
+    }
     return res.json({ message: 'Marked as taken.' });
   } catch (err) {
     console.warn('POST medicine taken failed:', err.message);

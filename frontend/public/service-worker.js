@@ -1,4 +1,4 @@
-const CACHE_NAME = 'elderly-care-shell-v1';
+const CACHE_NAME = 'elderly-care-shell-v2';
 // Only static shell assets; never cache API or Firebase (auth/user data).
 const CORE_ASSETS = ['/', '/index.html'];
 
@@ -59,3 +59,51 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(fetch(request));
 });
 
+self.addEventListener('push', (event) => {
+  let title = 'SOS';
+  let body = 'An elder needs help.';
+  let url = '/';
+  let pushData = {};
+  let type = 'sos';
+  if (event.data) {
+    try {
+      const data = event.data.json();
+      if (data.title) title = data.title;
+      if (data.body) body = data.body;
+      if (data.url) url = data.url;
+      if (data.data && typeof data.data === 'object') pushData = data.data;
+      if (data.type) type = data.type;
+    } catch (_) {}
+  }
+  const openUrl = pushData.url || url;
+  const isMedicine = type === 'medicine';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      vibrate: isMedicine ? [] : [500, 200, 500, 200, 500, 200, 1000],
+      requireInteraction: !isMedicine,
+      data: { url: openUrl, ...pushData },
+      tag: isMedicine ? 'medicine-reminder' : 'sos'
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = event.notification.data || {};
+  const url = data.url || '/';
+  const fullUrl = url.startsWith('http') ? url : self.location.origin + (url.startsWith('/') ? url : '/' + url);
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.startsWith(self.location.origin)) {
+          if (client.navigate) {
+            client.navigate(fullUrl);
+          }
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(fullUrl);
+    })
+  );
+});

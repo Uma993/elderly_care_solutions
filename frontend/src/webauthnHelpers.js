@@ -2,7 +2,7 @@
  * Helpers for WebAuthn (passkey) flows. Convert between JSON options and browser API format.
  */
 
-function base64UrlToBuffer(base64Url) {
+export function base64UrlToBuffer(base64Url) {
   const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
   const pad = base64.length % 4;
   const padded = pad ? base64 + '='.repeat(4 - pad) : base64;

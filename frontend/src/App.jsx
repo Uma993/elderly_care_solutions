@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import { API_BASE_URL } from './api';
 import LoginForm from './components/LoginForm.jsx';
 import RegisterForm from './components/RegisterForm.jsx';
@@ -9,8 +10,9 @@ import Tag from './components/ui/Tag.jsx';
 import ElderDashboard from './components/dashboards/ElderDashboard.jsx';
 import FamilyDashboard from './components/dashboards/FamilyDashboard.jsx';
 import PWAInstall from './components/PWAInstall.jsx';
+import SosAlertPage from './pages/SosAlertPage.jsx';
 
-function App() {
+function MainView() {
   const [activeTab, setActiveTab] = useState('login'); // 'login' | 'register'
   const [currentUser, setCurrentUser] = useState(null);
   const [token, setToken] = useState(null);
@@ -116,6 +118,15 @@ function App() {
         )}
       </Card>
     </PageShell>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/sos-alert" element={<SosAlertPage />} />
+      <Route path="/" element={<MainView />} />
+    </Routes>
   );
 }
 

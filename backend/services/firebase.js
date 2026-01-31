@@ -103,6 +103,33 @@ async function getLinkedElderIds(familyUserId) {
 }
 
 /**
+ * Get linked family user ids for an elder (from Firestore elder doc linkedFamilyIds).
+ * @param {string} elderId
+ * @returns {Promise<string[]>}
+ */
+async function getLinkedFamilyIds(elderId) {
+  if (!firestore) return [];
+  const ref = firestore.collection('users').doc(elderId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : {};
+  const ids = Array.isArray(data.linkedFamilyIds) ? data.linkedFamilyIds : [];
+  return ids.filter((id) => typeof id === 'string' && id.trim());
+}
+
+/**
+ * Get elder display name from Firestore user doc.
+ * @param {string} elderId
+ * @returns {Promise<string>}
+ */
+async function getElderName(elderId) {
+  if (!firestore) return 'Elder';
+  const ref = firestore.collection('users').doc(elderId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : {};
+  return data.fullName || data.name || 'Elder';
+}
+
+/**
  * Get medicines array from elder doc. Returns [] if missing.
  * @param {string} elderId
  * @returns {Promise<Array<{id,name,dosage,time,notes}>>}
@@ -207,22 +234,164 @@ async function completeElderTask(elderId, taskId) {
 }
 
 /**
- * Append an SOS alert to elder's doc. Reads elder name from doc, appends { time, elderName } to sosAlerts.
+ * Append an SOS alert to elder's doc. Reads elder name from doc, appends { id, time, elderName, location? } to sosAlerts.
  * @param {string} elderId
+ * @param {{ lat?: number, lng?: number }} [options] - optional location
+ * @returns {Promise<{ elderName: string, alert: object }>}
  */
-async function appendSosAlert(elderId) {
+async function appendSosAlert(elderId, options = {}) {
   if (!firestore) throw new Error('Firestore not configured');
   const ref = firestore.collection('users').doc(elderId);
   const snap = await ref.get();
   const data = snap.exists ? snap.data() : {};
   const elderName = data.fullName || data.name || 'Elder';
   const alerts = Array.isArray(data.sosAlerts) ? data.sosAlerts : [];
-  alerts.push({
+  const entry = {
     id: `sos-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     time: new Date().toISOString(),
     elderName
-  });
+  };
+  if (options.lat != null && options.lng != null) {
+    entry.location = { lat: options.lat, lng: options.lng };
+  }
+  alerts.push(entry);
   await ref.set({ sosAlerts: alerts }, { merge: true });
+  return { elderName, alert: entry };
+}
+
+/**
+ * Get reminders array from user doc. Returns [] if missing.
+ * @param {string} userId
+ * @returns {Promise<Array<{id,text,at,done,createdVia}>>}
+ */
+async function getReminders(userId) {
+  if (!firestore) return [];
+  const ref = firestore.collection('users').doc(userId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : null;
+  const arr = data && Array.isArray(data.reminders) ? data.reminders : [];
+  return arr.map((r) => ({
+    id: r.id,
+    text: r.text || '',
+    at: r.at || '',
+    done: !!r.done,
+    createdVia: r.createdVia || 'manual'
+  }));
+}
+
+/**
+ * Add a reminder to user doc.
+ * @param {string} userId
+ * @param {{ text: string, at: string }} payload - at is ISO time or "HH:MM"
+ * @returns {Promise<{id,text,at,done,createdVia}>}
+ */
+async function addReminder(userId, payload) {
+  if (!firestore) throw new Error('Firestore not configured');
+  const ref = firestore.collection('users').doc(userId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : {};
+  const reminders = Array.isArray(data.reminders) ? data.reminders : [];
+  const id = `rem-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const entry = {
+    id,
+    text: payload.text || '',
+    at: payload.at || '',
+    done: false,
+    createdVia: payload.createdVia || 'manual'
+  };
+  reminders.push(entry);
+  await ref.set({ reminders }, { merge: true });
+  return entry;
+}
+
+/**
+ * Update a reminder (e.g. set done).
+ * @param {string} userId
+ * @param {string} reminderId
+ * @param {object} updates - e.g. { done: true }
+ */
+async function updateReminder(userId, reminderId, updates) {
+  if (!firestore) throw new Error('Firestore not configured');
+  const ref = firestore.collection('users').doc(userId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : {};
+  const reminders = Array.isArray(data.reminders) ? data.reminders : [];
+  const idx = reminders.findIndex((r) => r.id === reminderId);
+  if (idx === -1) return;
+  reminders[idx] = { ...reminders[idx], ...updates };
+  await ref.set({ reminders }, { merge: true });
+}
+
+/**
+ * Get checklist array from user doc. Returns [] if missing.
+ * @param {string} userId
+ * @returns {Promise<Array<{id,text,done,createdAt}>>}
+ */
+async function getChecklist(userId) {
+  if (!firestore) return [];
+  const ref = firestore.collection('users').doc(userId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : null;
+  const arr = data && Array.isArray(data.checklist) ? data.checklist : [];
+  return arr.map((c) => ({
+    id: c.id,
+    text: c.text || '',
+    done: !!c.done,
+    createdAt: c.createdAt || ''
+  }));
+}
+
+/**
+ * Add a checklist item to user doc.
+ * @param {string} userId
+ * @param {{ text: string }} payload
+ * @returns {Promise<{id,text,done,createdAt}>}
+ */
+async function addChecklistItem(userId, payload) {
+  if (!firestore) throw new Error('Firestore not configured');
+  const ref = firestore.collection('users').doc(userId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : {};
+  const checklist = Array.isArray(data.checklist) ? data.checklist : [];
+  const id = `todo-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const now = new Date().toISOString();
+  const entry = { id, text: payload.text || '', done: false, createdAt: now };
+  checklist.push(entry);
+  await ref.set({ checklist }, { merge: true });
+  return entry;
+}
+
+/**
+ * Toggle checklist item done.
+ * @param {string} userId
+ * @param {string} itemId
+ */
+async function toggleChecklistItem(userId, itemId) {
+  if (!firestore) throw new Error('Firestore not configured');
+  const ref = firestore.collection('users').doc(userId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : {};
+  const checklist = Array.isArray(data.checklist) ? data.checklist : [];
+  const idx = checklist.findIndex((c) => c.id === itemId);
+  if (idx === -1) return;
+  checklist[idx] = { ...checklist[idx], done: !checklist[idx].done };
+  await ref.set({ checklist }, { merge: true });
+}
+
+/**
+ * Delete a checklist item.
+ * @param {string} userId
+ * @param {string} itemId
+ */
+async function deleteChecklistItem(userId, itemId) {
+  if (!firestore) throw new Error('Firestore not configured');
+  const ref = firestore.collection('users').doc(userId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : {};
+  const checklist = Array.isArray(data.checklist) ? data.checklist : [];
+  const filtered = checklist.filter((c) => c.id !== itemId);
+  if (filtered.length === checklist.length) return;
+  await ref.set({ checklist: filtered }, { merge: true });
 }
 
 module.exports = {
@@ -230,6 +399,8 @@ module.exports = {
   createCustomToken,
   linkElderToFamily,
   getLinkedElderIds,
+  getLinkedFamilyIds,
+  getElderName,
   getElderMedicines,
   setElderMedicines,
   appendMedicineIntakeLog,
@@ -237,6 +408,13 @@ module.exports = {
   setElderTasks,
   completeElderTask,
   appendSosAlert,
+  getReminders,
+  addReminder,
+  updateReminder,
+  getChecklist,
+  addChecklistItem,
+  toggleChecklistItem,
+  deleteChecklistItem,
   isConfigured,
   get firestore() {
     return firestore;
