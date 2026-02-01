@@ -10,6 +10,8 @@ const eldersRoutes = require('./routes/elders');
 const sosRoutes = require('./routes/sos');
 const pushRoutes = require('./routes/push');
 const aiRoutes = require('./routes/ai');
+const wellbeingRoutes = require('./routes/wellbeing');
+const activityRoutes = require('./routes/activity');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -25,6 +27,8 @@ app.use('/api/users', usersRoutes);
 app.use('/api/elders', eldersRoutes);
 app.use('/api/sos', sosRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/wellbeing', wellbeingRoutes);
+app.use('/api/activity', activityRoutes);
 app.use('/api', pushRoutes);
 
 // Basic health check
@@ -34,8 +38,16 @@ app.get('/api/health', (req, res) => {
 
 // Start server
 const { startMedicineReminderScheduler } = require('./services/medicineReminders');
+const { startReminderScheduler } = require('./services/reminderScheduler');
+const { startWellbeingScheduler } = require('./services/wellbeingScheduler');
+const { startInactiveScheduler } = require('./services/inactiveScheduler');
+const { startRefillReminderScheduler } = require('./services/refillReminderScheduler');
 app.listen(PORT, () => {
   console.log(`Elderly care backend listening on http://localhost:${PORT}`);
   startMedicineReminderScheduler();
+  startReminderScheduler();
+  startWellbeingScheduler();
+  startInactiveScheduler();
+  startRefillReminderScheduler();
 });
 

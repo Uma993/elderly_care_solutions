@@ -2,7 +2,8 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const router = express.Router();
 
-const { findByEmail, createNewUser } = require('../data/userStore');
+const { findByEmail, findById, createNewUser, updatePassword } = require('../data/userStore');
+const { validateAndConsume: validateChangePasswordToken } = require('../data/changePasswordTokens');
 const { createUserProfile, createCustomToken } = require('../services/firebase');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'elderly-care-dev-secret-change-in-production';
@@ -100,6 +101,46 @@ router.post('/login', (req, res) => {
     user: sanitizeUser(user),
     token
   });
+});
+
+// POST /api/auth/change-password — requires JWT; body: currentPassword + newPassword, or changePasswordToken (from WebAuthn verify) + newPassword
+router.post('/change-password', requireAuth, (req, res) => {
+  const userId = req.auth.userId;
+  const { currentPassword, changePasswordToken, newPassword, confirmNewPassword } = req.body || {};
+
+  if (!newPassword || typeof newPassword !== 'string') {
+    return res.status(400).json({ message: 'New password is required.' });
+  }
+  if (newPassword !== confirmNewPassword) {
+    return res.status(400).json({ message: 'New password and confirmation do not match.' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ message: 'New password must be at least 6 characters.' });
+  }
+
+  const user = findById(userId);
+  if (!user) {
+    return res.status(401).json({ message: 'User not found.' });
+  }
+
+  let verified = false;
+  if (changePasswordToken && typeof changePasswordToken === 'string') {
+    verified = validateChangePasswordToken(changePasswordToken, userId);
+  }
+  if (!verified && currentPassword !== undefined) {
+    verified = user.password === currentPassword;
+  }
+
+  if (!verified) {
+    return res.status(401).json({ message: 'Current password is wrong or verification expired. Enter your current password or verify with fingerprint again.' });
+  }
+
+  const updated = updatePassword(userId, newPassword);
+  if (!updated) {
+    return res.status(500).json({ message: 'Failed to update password.' });
+  }
+
+  return res.json({ message: 'Password updated successfully.' });
 });
 
 // POST /api/auth/firebase-token — returns a Firebase custom token for the authenticated user (Bearer JWT required)

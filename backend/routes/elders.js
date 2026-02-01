@@ -9,10 +9,16 @@ const {
   getElderName,
   getElderMedicines,
   setElderMedicines,
+  setMedicineRefillRequest,
+  updateMedicineRefillStatus,
   appendMedicineIntakeLog,
   getElderTasks,
   setElderTasks,
   completeElderTask,
+  getReminders,
+  getChecklist,
+  setLastActivityAt,
+  getRoutineSummary,
   isConfigured
 } = require('../services/firebase');
 const { getSubscriptionsByUserId } = require('../data/pushSubscriptions');
@@ -191,7 +197,151 @@ router.post('/:elderId/medicines/:medicineId/taken', requireAuth, requireElderSe
   }
 });
 
+/** POST /api/elders/:elderId/medicines/:medicineId/refill — family only (request refill) */
+router.post('/:elderId/medicines/:medicineId/refill', requireAuth, requireFamilyLinkedElder, async (req, res) => {
+  const elderId = req.params.elderId;
+  const medicineId = req.params.medicineId;
+  const notes = req.body?.notes != null ? String(req.body.notes).trim() : '';
+  const amountLeft = req.body?.amountLeft != null ? Number(req.body.amountLeft) : undefined;
+  const refillReminderDays = req.body?.refillReminderDays != null ? Number(req.body.refillReminderDays) : undefined;
+  try {
+    await setMedicineRefillRequest(elderId, medicineId, {
+      requestedBy: req.auth.userId,
+      notes,
+      amountLeft,
+      refillReminderDays
+    });
+    const medicines = await getElderMedicines(elderId);
+    const med = medicines.find((m) => m.id === medicineId);
+    // Push to elder: refill requested
+    if (vapidPublicKey && vapidPrivateKey && med) {
+      const elderSubs = getSubscriptionsByUserId(elderId);
+      const medicineName = med.name || 'Medicine';
+      const payload = JSON.stringify({
+        type: 'refill_requested',
+        title: 'Refill requested',
+        body: `Your family requested a refill for ${medicineName}.`,
+        url: '/medicines',
+        data: { url: '/medicines', type: 'refill_requested', elderId, medicineId }
+      });
+      elderSubs.forEach(({ subscription }) => {
+        webPush.sendNotification(subscription, payload).catch((pushErr) => {
+          console.warn('Refill-requested push failed for elder', elderId, pushErr.message);
+        });
+      });
+    }
+    return res.status(201).json(med || { message: 'Refill requested.' });
+  } catch (err) {
+    if (err.message === 'Medicine not found') return res.status(404).json({ message: 'Medicine not found.' });
+    console.warn('POST refill failed:', err.message);
+    return res.status(500).json({ message: err.message || 'Failed to request refill.' });
+  }
+});
+
+/** PATCH /api/elders/:elderId/medicines/:medicineId/refill — family only (update refill status and/or amount/reminder) */
+router.patch('/:elderId/medicines/:medicineId/refill', requireAuth, requireFamilyLinkedElder, async (req, res) => {
+  const elderId = req.params.elderId;
+  const medicineId = req.params.medicineId;
+  const { status, notes, amountLeft, refillReminderAt, refillReminderDays } = req.body || {};
+  const hasStatus = status === 'pending' || status === 'ordered' || status === 'received';
+  const hasAmountOrReminder = amountLeft !== undefined || refillReminderAt !== undefined || refillReminderDays !== undefined;
+  if (!hasStatus && !hasAmountOrReminder) {
+    return res.status(400).json({ message: 'Provide status (pending/ordered/received) and/or amountLeft, refillReminderAt, refillReminderDays.' });
+  }
+  if (status !== undefined && !hasStatus) {
+    return res.status(400).json({ message: 'Invalid status. Use pending, ordered, or received.' });
+  }
+  try {
+    await updateMedicineRefillStatus(elderId, medicineId, {
+      status: hasStatus ? status : undefined,
+      notes,
+      amountLeft: amountLeft !== undefined ? Number(amountLeft) : undefined,
+      refillReminderAt,
+      refillReminderDays: refillReminderDays != null ? Number(refillReminderDays) : undefined
+    });
+    const medicines = await getElderMedicines(elderId);
+    const med = medicines.find((m) => m.id === medicineId);
+    return res.json(med || { message: 'Refill updated.' });
+  } catch (err) {
+    if (err.message === 'Medicine not found') return res.status(404).json({ message: 'Medicine not found.' });
+    console.warn('PATCH refill failed:', err.message);
+    return res.status(500).json({ message: err.message || 'Failed to update refill status.' });
+  }
+});
+
+/** GET /api/elders/:elderId/routine — family (linked) or elder (self); query from, to (YYYY-MM-DD); default last 30 days */
+router.get('/:elderId/routine', requireAuth, async (req, res) => {
+  const elderId = req.params.elderId;
+  if (!elderId) return res.status(400).json({ message: 'Elder ID is required.' });
+  if (req.auth.role === 'family') {
+    if (!isConfigured()) return res.status(503).json({ message: 'Firestore not configured.' });
+    const linkedIds = await getLinkedElderIds(req.auth.userId);
+    if (!linkedIds.includes(elderId)) return res.status(403).json({ message: 'You are not linked to this elder.' });
+  } else if (req.auth.role === 'elderly') {
+    if (req.auth.userId !== elderId) return res.status(403).json({ message: 'You can only view your own routine.' });
+  } else {
+    return res.status(403).json({ message: 'Access denied.' });
+  }
+  const toDate = req.query.to || new Date().toISOString().slice(0, 10);
+  const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+  const to = new Date(toDate + 'T12:00:00');
+  const from = new Date(to);
+  from.setDate(from.getDate() - days);
+  const fromDate = from.toISOString().slice(0, 10);
+  try {
+    const summary = await getRoutineSummary(elderId, fromDate, toDate);
+    return res.json(summary);
+  } catch (err) {
+    console.warn('GET routine failed:', err.message);
+    return res.status(500).json({ message: err.message || 'Failed to load routine.' });
+  }
+});
+
 // ——— Tasks ———
+
+/** GET /api/elders/:elderId/reminders — family (linked) or elder (self) */
+router.get('/:elderId/reminders', requireAuth, async (req, res) => {
+  const elderId = req.params.elderId;
+  if (!elderId) return res.status(400).json({ message: 'Elder ID is required.' });
+  if (req.auth.role === 'family') {
+    if (!isConfigured()) return res.status(503).json({ message: 'Firestore not configured.' });
+    const linkedIds = await getLinkedElderIds(req.auth.userId);
+    if (!linkedIds.includes(elderId)) return res.status(403).json({ message: 'You are not linked to this elder.' });
+  } else if (req.auth.role === 'elderly') {
+    if (req.auth.userId !== elderId) return res.status(403).json({ message: 'You can only view your own reminders.' });
+  } else {
+    return res.status(403).json({ message: 'Access denied.' });
+  }
+  try {
+    const reminders = await getReminders(elderId);
+    return res.json({ reminders });
+  } catch (err) {
+    console.warn('GET reminders failed:', err.message);
+    return res.status(500).json({ message: err.message || 'Failed to load reminders.' });
+  }
+});
+
+/** GET /api/elders/:elderId/checklist — family (linked) or elder (self) */
+router.get('/:elderId/checklist', requireAuth, async (req, res) => {
+  const elderId = req.params.elderId;
+  if (!elderId) return res.status(400).json({ message: 'Elder ID is required.' });
+  if (req.auth.role === 'family') {
+    if (!isConfigured()) return res.status(503).json({ message: 'Firestore not configured.' });
+    const linkedIds = await getLinkedElderIds(req.auth.userId);
+    if (!linkedIds.includes(elderId)) return res.status(403).json({ message: 'You are not linked to this elder.' });
+  } else if (req.auth.role === 'elderly') {
+    if (req.auth.userId !== elderId) return res.status(403).json({ message: 'You can only view your own checklist.' });
+  } else {
+    return res.status(403).json({ message: 'Access denied.' });
+  }
+  try {
+    const checklist = await getChecklist(elderId);
+    return res.json({ checklist });
+  } catch (err) {
+    console.warn('GET checklist failed:', err.message);
+    return res.status(500).json({ message: err.message || 'Failed to load checklist.' });
+  }
+});
 
 /** GET /api/elders/:elderId/tasks — family (linked) or elder (self) */
 router.get('/:elderId/tasks', requireAuth, async (req, res) => {
@@ -218,7 +368,7 @@ router.get('/:elderId/tasks', requireAuth, async (req, res) => {
 /** POST /api/elders/:elderId/tasks — family only */
 router.post('/:elderId/tasks', requireAuth, requireFamilyLinkedElder, async (req, res) => {
   const elderId = req.params.elderId;
-  const { title, description, time } = req.body || {};
+  const { title, description, time, date } = req.body || {};
   if (!title || typeof title !== 'string' || !title.trim()) {
     return res.status(400).json({ message: 'Task title is required.' });
   }
@@ -228,6 +378,7 @@ router.post('/:elderId/tasks', requireAuth, requireFamilyLinkedElder, async (req
     title: String(title).trim(),
     description: description != null ? String(description).trim() : '',
     time: time != null ? String(time).trim() : '',
+    date: date != null ? String(date).trim() : '',
     completed: false,
     completedAt: null
   };
@@ -246,7 +397,7 @@ router.post('/:elderId/tasks', requireAuth, requireFamilyLinkedElder, async (req
 router.put('/:elderId/tasks/:taskId', requireAuth, requireFamilyLinkedElder, async (req, res) => {
   const elderId = req.params.elderId;
   const taskId = req.params.taskId;
-  const { title, description, time } = req.body || {};
+  const { title, description, time, date } = req.body || {};
   try {
     const current = await getElderTasks(elderId);
     const idx = current.findIndex((t) => t.id === taskId);
@@ -254,6 +405,7 @@ router.put('/:elderId/tasks/:taskId', requireAuth, requireFamilyLinkedElder, asy
     if (title != null) current[idx].title = String(title).trim();
     if (description != null) current[idx].description = String(description).trim();
     if (time != null) current[idx].time = String(time).trim();
+    if (date != null) current[idx].date = String(date).trim();
     await setElderTasks(elderId, current);
     return res.json(current[idx]);
   } catch (err) {
@@ -284,7 +436,31 @@ router.post('/:elderId/tasks/:taskId/complete', requireAuth, requireElderSelf, a
   const taskId = req.params.taskId;
   if (!isConfigured()) return res.status(503).json({ message: 'Firestore not configured.' });
   try {
+    const tasks = await getElderTasks(elderId);
+    const task = tasks.find((t) => t.id === taskId);
+    const taskTitle = task ? (task.title || 'Task') : 'Task';
     await completeElderTask(elderId, taskId);
+    await setLastActivityAt(elderId);
+    // Push to family: task completed
+    if (vapidPublicKey && vapidPrivateKey) {
+      const elderName = await getElderName(elderId).then((n) => n || 'Elder');
+      const familyIds = await getLinkedFamilyIds(elderId);
+      const payload = JSON.stringify({
+        type: 'task_completed',
+        title: 'Task completed',
+        body: `${elderName} completed ${taskTitle}.`,
+        url: '/overview',
+        data: { url: '/overview', type: 'task_completed', elderId, taskId }
+      });
+      familyIds.forEach((familyUserId) => {
+        const subs = getSubscriptionsByUserId(familyUserId);
+        subs.forEach(({ subscription }) => {
+          webPush.sendNotification(subscription, payload).catch((pushErr) => {
+            console.warn('Task-completed push failed for', familyUserId, pushErr.message);
+          });
+        });
+      });
+    }
     return res.json({ message: 'Task marked complete.' });
   } catch (err) {
     console.warn('POST task complete failed:', err.message);

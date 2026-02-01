@@ -32,6 +32,7 @@ export async function getElderDashboardData(userId, token) {
     title: t.title || '',
     description: t.description || '',
     time: t.time || '',
+    date: t.date || '',
     completed: !!t.completed,
     completedAt: t.completedAt || null
   }));
@@ -87,6 +88,7 @@ export async function getFamilyDashboardData(userId, token) {
       age: elderData.age,
       location: elderData.location,
       primaryCondition: elderData.primaryCondition,
+      lastActivityAt: elderData.lastActivityAt || null,
       healthUpdates: Array.isArray(elderData.healthUpdates) ? elderData.healthUpdates : [],
       updates: Array.isArray(elderData.updates) ? elderData.updates : [],
       medicineIntakeLogs: Array.isArray(elderData.medicineIntakeLogs) ? elderData.medicineIntakeLogs : [],

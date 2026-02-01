@@ -1,14 +1,18 @@
-// Bright warm sunset + cool accent; visible, stylish, elder-friendly
+// Theme-driven: main text, secondary text, links, primary button (blue/white care theme)
 export const colors = {
   background: '#fef6e6',
   surface: '#ffffff',
   surfaceSoft: '#f5f0fa',
   primary: '#2563eb',
+  link: '#2563eb',
+  buttonPrimary: '#2563eb',
   primarySoft: '#1e40af',
   primaryHover: '#1d4ed8',
   accent: '#5b21b6',
   text: '#0f172a',
+  textPrimary: '#0f172a',
   textMuted: '#334155',
+  textSecondary: '#334155',
   borderSubtle: '#94a3b8',
   successBg: '#dcfce7',
   successText: '#166534',
@@ -34,9 +38,27 @@ export const spacing = {
 };
 
 export const typography = {
-  fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  fontFamily: "'Inter', sans-serif",
   baseSize: '20px',
   heading1: '2.1rem',
   heading2: '1.6rem',
   heading3: '1.25rem'
+};
+
+/** Timeline tab dark theme (reference design) */
+export const timelineTheme = {
+  timelineBg: '#1e293b',
+  timelineSurface: '#334155',
+  timelineText: '#f8fafc',
+  timelineTextMuted: '#94a3b8',
+  timelineBorder: '#475569',
+  timelineDotLine: '#64748b',
+  timelineFAB: '#e11d48',
+  timelineSelectedDayBg: '#ffffff',
+  timelineSelectedDayText: '#1e293b',
+  timelineMedicine: '#3b82f6',
+  timelineTask: '#e11d48',
+  timelineReminder: '#f59e0b',
+  timelineChecklist: '#64748b',
+  timelineFontFamily: "'Inter', sans-serif"
 };

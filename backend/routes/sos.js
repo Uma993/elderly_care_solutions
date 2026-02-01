@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const webPush = require('web-push');
 const { requireAuth } = require('./auth');
-const { appendSosAlert, isConfigured, getLinkedFamilyIds } = require('../services/firebase');
+const { appendSosAlert, setLastActivityAt, isConfigured, getLinkedFamilyIds } = require('../services/firebase');
 const { getSubscriptionsByUserId } = require('../data/pushSubscriptions');
 
 const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
@@ -23,6 +23,7 @@ router.post('/', requireAuth, async (req, res) => {
   const { lat, lng } = req.body || {};
   try {
     const { elderName, alert } = await appendSosAlert(elderId, { lat, lng });
+    await setLastActivityAt(elderId);
     const familyIds = await getLinkedFamilyIds(elderId);
     const latVal = alert.location?.lat;
     const lngVal = alert.location?.lng;

@@ -4,11 +4,90 @@
   box-sizing: border-box;
 }
 
+/* Theme: text and link colors from tokens; Inter everywhere */
+:root {
+  --color-text: #0f172a;
+  --color-text-muted: #334155;
+  --color-link: #2563eb;
+  --color-primary: #2563eb;
+  --font-family: 'Inter', sans-serif;
+}
+
 /* Light theme – values aligned with design/tokens.js */
 body {
   margin: 0;
-  color: #0f172a;
+  color: var(--color-text);
   background: #fef6e6;
+  font-family: var(--font-family);
+}
+
+/* Shared background: image set by modifier (auth vs dashboard) */
+.app-shell {
+  position: relative;
+  min-height: 100vh;
+}
+.app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  z-index: 0;
+}
+.app-shell--auth::before {
+  background-image: url('/bg-login.jpeg');
+}
+.app-shell--dashboard::before {
+  background-image: url('/bg-dashboard.jpeg');
+}
+.app-shell::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.55);
+  z-index: 1;
+}
+.app-shell-content {
+  position: relative;
+  z-index: 2;
+  min-height: 100vh;
+}
+
+.auth-welcome-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--color-text);
+  text-align: center;
+}
+
+.auth-welcome-subtitle {
+  margin: 0 0 1.25rem;
+  font-size: 1.02rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.auth-switch {
+  margin: 1rem 0 0;
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.auth-link {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: inherit;
+  font-weight: 500;
+  color: var(--color-link);
+  text-decoration: underline;
+}
+
+.auth-link:hover {
+  color: var(--color-primary);
 }
 
 .auth-actions {
@@ -26,7 +105,7 @@ body {
   cursor: pointer;
 }
 .btn:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 .btn-primary:hover:not(:disabled) {
@@ -53,6 +132,7 @@ label {
   display: block;
   margin-bottom: 0.35rem;
   font-weight: 500;
+  color: var(--color-text);
 }
 
 input,
@@ -65,11 +145,17 @@ select {
   min-height: 48px;
 }
 
+input::placeholder,
+select::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.9;
+}
+
 input:focus,
 select:focus {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--color-primary);
   outline-offset: 1px;
-  border-color: #2563eb;
+  border-color: var(--color-primary);
 }
 
 .role-group {
@@ -125,5 +211,95 @@ select:focus {
 .hover-card:hover {
   background: #faf8f5;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+/* Voice assistant mic button – pulse when listening */
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4); transform: scale(1); }
+  50% { box-shadow: 0 4px 24px rgba(37, 99, 235, 0.6); transform: scale(1.05); }
+}
+.mic-button-listening {
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+
+/* Dashboard expanded – mobile and laptop friendly */
+.dashboard-expanded {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  padding: 0;
+}
+.dashboard-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+.dashboard-hero-grid button {
+  min-height: 120px;
+  min-width: 0;
+  touch-action: manipulation;
+  min-height: 44px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.dashboard-hero-grid button.dashboard-hero-card--hover {
+  transform: scale(1.03);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+.dashboard-hero-tooltip {
+  min-height: 1.5rem;
+  margin-top: 0.35rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+.dashboard-hero-grid--family {
+  /* Family has 5 cards: 2x2 + 1 on small; 5 in a row on large */
+}
+.dashboard-tabs button {
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  touch-action: manipulation;
+}
+.dashboard-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.dashboard-section {
+  margin-bottom: 1.5rem;
+}
+@media (min-width: 600px) {
+  .dashboard-hero-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.75rem;
+  }
+}
+@media (min-width: 900px) {
+  .dashboard-expanded {
+    max-width: 64rem;
+    margin: 0 auto;
+    padding: 0 1rem;
+  }
+  .dashboard-hero-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .dashboard-hero-grid--family {
+    grid-template-columns: repeat(5, 1fr);
+  }
+  .dashboard-sections--two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  .dashboard-sections--two-col .dashboard-section {
+    margin-bottom: 0;
+  }
+}
+@media (min-width: 900px) and (max-width: 1200px) {
+  .dashboard-hero-grid--family {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 

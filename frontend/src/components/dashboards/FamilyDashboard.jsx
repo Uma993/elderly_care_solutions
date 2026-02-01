@@ -1,1081 +1,231 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { doc, onSnapshot } from 'firebase/firestore';
-import Button from '../ui/Button.jsx';
-import Tag from '../ui/Tag.jsx';
-import PasskeyRegister from '../PasskeyRegister.jsx';
-import PushSubscribe from '../PushSubscribe.jsx';
-import { colors } from '../../design/tokens';
-import { API_BASE_URL, getAuthHeaders } from '../../api';
-import { getFamilyDashboardData } from '../../firebase/dashboardData.js';
-import { db } from '../../firebase/config.js';
-import { ensureSignedIn } from '../../firebase/authFirebase.js';
+import React from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { colors, radii } from '../../design/tokens';
+import { useFamilyElder } from '../../context/FamilyElderContext.jsx';
+import { useHoverSegments, FAMILY_SEGMENT_TOOLTIPS } from '../../hooks/useHoverSegments';
 
-const LOAD_ERROR_MESSAGE =
-  "Could not load elder. Make sure you're linked: your elder's profile must list you as family.";
+const INACTIVE_THRESHOLD_HOURS = 24;
+
+function formatLastActive(iso) {
+  if (!iso) return null;
+  const then = new Date(iso);
+  const now = new Date();
+  const ms = now - then;
+  const mins = Math.floor(ms / 60000);
+  const hours = Math.floor(ms / 3600000);
+  const days = Math.floor(ms / 86400000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days === 1) return '1 day ago';
+  return `${days} days ago`;
+}
+
+function isInactive(lastActivityAt, thresholdHours = INACTIVE_THRESHOLD_HOURS) {
+  if (!lastActivityAt) return true;
+  const then = new Date(lastActivityAt).getTime();
+  const now = Date.now();
+  return (now - then) > thresholdHours * 60 * 60 * 1000;
+}
+
+const heroCardStyle = (bg) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '0.5rem',
+  padding: '1rem',
+  minHeight: 120,
+  borderRadius: radii.card,
+  background: bg,
+  color: '#fff',
+  border: 'none',
+  cursor: 'pointer',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+  fontSize: '1rem',
+  fontWeight: 600
+});
 
 function FamilyDashboard({ currentUser, token, onLogout }) {
-  const [acknowledgedIds, setAcknowledgedIds] = useState({});
-  const [elders, setElders] = useState([]);
-  const [selectedElderId, setSelectedElderId] = useState(null);
-  const [loadError, setLoadError] = useState('');
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [linkElderPhone, setLinkElderPhone] = useState('');
-  const [linkError, setLinkError] = useState('');
-  const [linkLoading, setLinkLoading] = useState(false);
-  const [linkSuccessName, setLinkSuccessName] = useState('');
-  const [medicines, setMedicines] = useState([]);
-  const [medicineForm, setMedicineForm] = useState({ name: '', dosage: '', time: '', notes: '' });
-  const [editingMedicineId, setEditingMedicineId] = useState(null);
-  const [medicineLoading, setMedicineLoading] = useState(false);
-  const [tasks, setTasks] = useState([]);
-  const [taskForm, setTaskForm] = useState({ title: '', description: '', time: '' });
-  const [editingTaskId, setEditingTaskId] = useState(null);
-  const [taskLoading, setTaskLoading] = useState(false);
-  const [flashAlert, setFlashAlert] = useState(null);
-  const [scheduleSuggestions, setScheduleSuggestions] = useState([]);
-  const [scheduleExplanation, setScheduleExplanation] = useState('');
-  const [optimizeLoading, setOptimizeLoading] = useState(false);
-  const [simplifyResult, setSimplifyResult] = useState(null);
-  const prevSosIdsByElder = useRef({});
-  const sosUnsubscribesRef = useRef([]);
-  const defaultTitle = 'Elderly Care';
-
-  useEffect(() => {
-    let isMounted = true;
-    setLoadError('');
-
-    async function load() {
-      try {
-        const data = await getFamilyDashboardData(currentUser.id, token);
-        if (!isMounted || !data) return;
-        const elderList = Array.isArray(data.elders) ? data.elders : [];
-        setElders(elderList);
-        setSelectedElderId((prev) => {
-          if (elderList.length === 0) return null;
-          if (elderList.some((e) => e.id === prev)) return prev;
-          return elderList[0].id;
-        });
-      } catch (error) {
-        if (isMounted) setLoadError(LOAD_ERROR_MESSAGE);
-      }
-    }
-
-    load();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUser.id, token, refreshTrigger]);
-
-  // Real-time SOS: listen to linked elders' docs and show flash overlay on new SOS
-  useEffect(() => {
-    if (!db || elders.length === 0 || !token) return;
-    sosUnsubscribesRef.current = [];
-    (async () => {
-      try {
-        await ensureSignedIn(token);
-      } catch {
-        return;
-      }
-      const unsubs = [];
-      elders.forEach((elder) => {
-        const elderId = elder.id;
-        const elderName = elder.name || 'Elder';
-        const unsub = onSnapshot(doc(db, 'users', elderId), (snap) => {
-          const data = snap.exists() ? snap.data() : {};
-          const sosAlerts = Array.isArray(data.sosAlerts) ? data.sosAlerts : [];
-          const prevIds = prevSosIdsByElder.current[elderId] || new Set();
-          const newAlerts = sosAlerts.filter((a) => a.id && !prevIds.has(a.id));
-          prevSosIdsByElder.current[elderId] = new Set(sosAlerts.map((a) => a.id).filter(Boolean));
-          if (newAlerts.length > 0) {
-            const alert = newAlerts[newAlerts.length - 1];
-            setFlashAlert({
-              id: alert.id,
-              time: alert.time,
-              elderName: alert.elderName || elderName,
-              elderId,
-              location: alert.location
-            });
-            document.title = `SOS – ${alert.elderName || elderName} needs help`;
-            if (typeof navigator.vibrate === 'function') {
-              navigator.vibrate([500, 200, 500, 200, 500, 200, 1000]);
-            }
-            try {
-              const ctx = new (window.AudioContext || window.webkitAudioContext)();
-              const osc = ctx.createOscillator();
-              const gain = ctx.createGain();
-              osc.connect(gain);
-              gain.connect(ctx.destination);
-              osc.type = 'sine';
-              const t0 = ctx.currentTime;
-              osc.frequency.setValueAtTime(600, t0);
-              osc.frequency.setValueAtTime(1200, t0 + 0.15);
-              osc.frequency.setValueAtTime(600, t0 + 0.3);
-              osc.frequency.setValueAtTime(1200, t0 + 0.45);
-              osc.frequency.setValueAtTime(600, t0 + 0.6);
-              gain.gain.setValueAtTime(0.35, t0);
-              gain.gain.exponentialRampToValueAtTime(0.01, t0 + 0.9);
-              osc.start(t0);
-              osc.stop(t0 + 0.9);
-            } catch (_) {}
-          }
-        });
-        unsubs.push(unsub);
-      });
-      sosUnsubscribesRef.current = unsubs;
-    })();
-    return () => {
-      sosUnsubscribesRef.current.forEach((fn) => typeof fn === 'function' && fn());
-      sosUnsubscribesRef.current = [];
-    };
-  }, [elders, token]);
-
-  const selectedElder = elders.find((e) => e.id === selectedElderId) || elders[0] || null;
-  const allSosAlerts = elders.flatMap((e) => (e.sosAlerts || []).map((a) => ({ ...a, elderName: a.elderName || e.name || 'Elder', elderId: e.id }))).sort((a, b) => (b.time || '').localeCompare(a.time || ''));
-  const health = selectedElder
-    ? (selectedElder.healthUpdates || []).map((u) => ({
-        id: u.id,
-        time: u.time || '',
-        summary: u.title || u.summary || 'Update',
-        details: u.details || ''
-      }))
-    : [];
-  const medicineIntakeLogs = selectedElder ? (selectedElder.medicineIntakeLogs || []) : [];
-
-  useEffect(() => {
-    if (!selectedElderId || !token) {
-      setMedicines([]);
-      return;
-    }
-    let isMounted = true;
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/elders/${selectedElderId}/medicines`, {
-          headers: getAuthHeaders(token)
-        });
-        if (!isMounted) return;
-        if (res.ok) {
-          const data = await res.json();
-          setMedicines(Array.isArray(data.medicines) ? data.medicines : []);
-        } else {
-          setMedicines([]);
-        }
-      } catch {
-        if (isMounted) setMedicines([]);
-      }
-    })();
-    return () => { isMounted = false; };
-  }, [selectedElderId, token, refreshTrigger]);
-
-  useEffect(() => {
-    if (!selectedElderId || !token) {
-      setTasks([]);
-      return;
-    }
-    let isMounted = true;
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/elders/${selectedElderId}/tasks`, {
-          headers: getAuthHeaders(token)
-        });
-        if (!isMounted) return;
-        if (res.ok) {
-          const data = await res.json();
-          setTasks(Array.isArray(data.tasks) ? data.tasks : []);
-        } else {
-          setTasks([]);
-        }
-      } catch {
-        if (isMounted) setTasks([]);
-      }
-    })();
-    return () => { isMounted = false; };
-  }, [selectedElderId, token, refreshTrigger]);
-
-  const handleAddMedicine = async (e) => {
-    e?.preventDefault();
-    if (!selectedElderId || !medicineForm.name.trim()) return;
-    if (editingMedicineId) {
-      await handleUpdateMedicine(editingMedicineId, {
-        name: medicineForm.name.trim(),
-        dosage: medicineForm.dosage.trim(),
-        time: medicineForm.time.trim(),
-        notes: medicineForm.notes.trim()
-      });
-      setMedicineForm({ name: '', dosage: '', time: '', notes: '' });
-      setEditingMedicineId(null);
-      return;
-    }
-    setMedicineLoading(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/elders/${selectedElderId}/medicines`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-        body: JSON.stringify({
-          name: medicineForm.name.trim(),
-          dosage: medicineForm.dosage.trim(),
-          time: medicineForm.time.trim(),
-          notes: medicineForm.notes.trim()
-        })
-      });
-      if (res.ok) {
-        setMedicineForm({ name: '', dosage: '', time: '', notes: '' });
-        setRefreshTrigger((t) => t + 1);
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setLinkError(data.message || 'Failed to add medicine.');
-      }
-    } catch {
-      setLinkError('Unable to reach the server.');
-    } finally {
-      setMedicineLoading(false);
-    }
-  };
-
-  const handleUpdateMedicine = async (medicineId, payload) => {
-    if (!selectedElderId) return;
-    setMedicineLoading(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/elders/${selectedElderId}/medicines/${medicineId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        setEditingMedicineId(null);
-        setRefreshTrigger((t) => t + 1);
-      }
-    } catch {
-      setLinkError('Unable to reach the server.');
-    } finally {
-      setMedicineLoading(false);
-    }
-  };
-
-  const handleDeleteMedicine = async (medicineId) => {
-    if (!selectedElderId) return;
-    setMedicineLoading(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/elders/${selectedElderId}/medicines/${medicineId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(token)
-      });
-      if (res.ok) setRefreshTrigger((t) => t + 1);
-    } catch {
-      setLinkError('Unable to reach the server.');
-    } finally {
-      setMedicineLoading(false);
-    }
-  };
-
-  const handleOptimizeSchedule = async () => {
-    if (medicines.length === 0 || !token) return;
-    setOptimizeLoading(true);
-    setScheduleSuggestions([]);
-    setScheduleExplanation('');
-    try {
-      const res = await fetch(`${API_BASE_URL}/ai/optimize-schedule`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-        body: JSON.stringify({
-          medicines: medicines.map((m) => ({ id: m.id, name: m.name, time: m.time || '' }))
-        })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && Array.isArray(data.suggestions)) {
-        setScheduleSuggestions(data.suggestions);
-        setScheduleExplanation(data.explanation || '');
-      }
-    } catch (_) {}
-    setOptimizeLoading(false);
-  };
-
-  const handleApplySchedule = async () => {
-    if (!selectedElderId || scheduleSuggestions.length === 0) return;
-    setMedicineLoading(true);
-    try {
-      for (const s of scheduleSuggestions) {
-        const m = medicines.find((med) => med.id === s.id);
-        if (!m || !s.suggestedTime) continue;
-        await fetch(`${API_BASE_URL}/elders/${selectedElderId}/medicines/${s.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-          body: JSON.stringify({
-            name: m.name,
-            dosage: m.dosage || '',
-            time: s.suggestedTime,
-            notes: m.notes || ''
-          })
-        });
-      }
-      setScheduleSuggestions([]);
-      setScheduleExplanation('');
-      setRefreshTrigger((t) => t + 1);
-    } catch (_) {}
-    setMedicineLoading(false);
-  };
-
-  const handleSimplifyTask = async (text) => {
-    if (!text || !text.trim() || !token) return;
-    setSimplifyResult(null);
-    try {
-      const res = await fetch(`${API_BASE_URL}/ai/simplify-text`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-        body: JSON.stringify({ text: text.trim() })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.simplified) setSimplifyResult({ original: text, simplified: data.simplified });
-    } catch (_) {}
-  };
-
-  const handleAddTask = async (e) => {
-    e?.preventDefault();
-    if (!selectedElderId || !taskForm.title.trim()) return;
-    if (editingTaskId) {
-      await handleUpdateTask(editingTaskId, {
-        title: taskForm.title.trim(),
-        description: taskForm.description.trim(),
-        time: taskForm.time.trim()
-      });
-      setTaskForm({ title: '', description: '', time: '' });
-      setEditingTaskId(null);
-      return;
-    }
-    setTaskLoading(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/elders/${selectedElderId}/tasks`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-        body: JSON.stringify({
-          title: taskForm.title.trim(),
-          description: taskForm.description.trim(),
-          time: taskForm.time.trim()
-        })
-      });
-      if (res.ok) {
-        setTaskForm({ title: '', description: '', time: '' });
-        setRefreshTrigger((t) => t + 1);
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setLinkError(data.message || 'Failed to add task.');
-      }
-    } catch {
-      setLinkError('Unable to reach the server.');
-    } finally {
-      setTaskLoading(false);
-    }
-  };
-
-  const handleUpdateTask = async (taskId, payload) => {
-    if (!selectedElderId) return;
-    setTaskLoading(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/elders/${selectedElderId}/tasks/${taskId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        setEditingTaskId(null);
-        setRefreshTrigger((t) => t + 1);
-      }
-    } catch {
-      setLinkError('Unable to reach the server.');
-    } finally {
-      setTaskLoading(false);
-    }
-  };
-
-  const handleDeleteTask = async (taskId) => {
-    if (!selectedElderId) return;
-    setTaskLoading(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/elders/${selectedElderId}/tasks/${taskId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(token)
-      });
-      if (res.ok) setRefreshTrigger((t) => t + 1);
-    } catch {
-      setLinkError('Unable to reach the server.');
-    } finally {
-      setTaskLoading(false);
-    }
-  };
-
-  const handleLinkToElder = async () => {
-    const elderPhone = linkElderPhone.trim().replace(/\s/g, '');
-    if (!elderPhone) {
-      setLinkError('Enter the elder\'s phone number.');
-      return;
-    }
-    setLinkError('');
-    setLinkSuccessName('');
-    setLinkLoading(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/users/link-elder`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-        body: JSON.stringify({ elderPhone })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setLinkError(data.message || 'Failed to link.');
-        return;
-      }
-      setLinkSuccessName(data.elderName || 'Elder');
-      setLinkElderPhone('');
-      setRefreshTrigger((t) => t + 1);
-    } catch {
-      setLinkError('Unable to reach the server.');
-    } finally {
-      setLinkLoading(false);
-    }
-  };
-
-  const acknowledge = (id) => {
-    setAcknowledgedIds((prev) => ({
-      ...prev,
-      [id]: true
-    }));
-  };
-
-  const dismissFlash = () => {
-    setFlashAlert(null);
-    document.title = defaultTitle;
-  };
-
   const navigate = useNavigate();
-  const flashAlertLocation = flashAlert?.location;
-  const hasLocation = flashAlertLocation?.lat != null && flashAlertLocation?.lng != null;
-  const mapUrl = hasLocation
-    ? `https://www.google.com/maps?q=${encodeURIComponent(flashAlertLocation.lat)},${encodeURIComponent(flashAlertLocation.lng)}`
-    : null;
-  const sosPageUrl = flashAlert
-    ? `/sos-alert?alertId=${encodeURIComponent(flashAlert.id || '')}&elderId=${encodeURIComponent(flashAlert.elderId || '')}&elderName=${encodeURIComponent(flashAlert.elderName || 'Elder')}&time=${encodeURIComponent(flashAlert.time || '')}${hasLocation ? `&lat=${encodeURIComponent(flashAlertLocation.lat)}&lng=${encodeURIComponent(flashAlertLocation.lng)}` : ''}`
-    : '/';
+  const { elders, loadError } = useFamilyElder() || {};
+  const { hoverSegment, onEnter, onLeave } = useHoverSegments();
+
+  const inactiveElders = (elders || []).filter((e) => isInactive(e.lastActivityAt));
+
+  if (!currentUser) return null;
 
   return (
-    <div>
-      {flashAlert && (
-        <div
-          role="alert"
+    <div className="dashboard-expanded">
+      {inactiveElders.length > 0 && (
+        <section
           style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            background: 'linear-gradient(180deg, #8b0000 0%, #4a0000 100%)',
-            color: '#fff',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '2rem',
-            textAlign: 'center',
-            boxSizing: 'border-box'
-          }}
-        >
-          <h2 style={{ margin: '0 0 0.5rem', fontSize: 'clamp(1.5rem, 5vw, 2.25rem)' }}>SOS</h2>
-          <p style={{ margin: '0 0 0.5rem', fontSize: 'clamp(1.1rem, 3vw, 1.4rem)' }}>
-            {flashAlert.elderName} needs help
-          </p>
-          {flashAlert.time && (
-            <p style={{ margin: '0 0 0.75rem', fontSize: '1rem', opacity: 0.9 }}>
-              Time: {new Date(flashAlert.time).toLocaleString()}
-            </p>
-          )}
-          {hasLocation && (
-            <p style={{ margin: '0 0 0.5rem', fontSize: '0.95rem' }}>
-              Location: {flashAlertLocation.lat}, {flashAlertLocation.lng}
-            </p>
-          )}
-          {mapUrl && (
-            <a
-              href={mapUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-block',
-                padding: '0.6rem 1.2rem',
-                background: '#fff',
-                color: '#8b0000',
-                borderRadius: '8px',
-                fontWeight: 600,
-                textDecoration: 'none',
-                marginBottom: '1rem'
-              }}
-            >
-              Open in map
-            </a>
-          )}
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-            <Button
-              variant="primary"
-              onClick={() => {
-                dismissFlash();
-                navigate(sosPageUrl);
-              }}
-              style={{ minHeight: '44px' }}
-            >
-              View
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={dismissFlash}
-              style={{ minHeight: '44px', color: '#fff', borderColor: '#fff' }}
-            >
-              Dismiss
-            </Button>
-          </div>
-        </div>
-      )}
-      <h2 style={{ marginTop: 0, marginBottom: '0.5rem' }}>
-        Welcome, {currentUser.fullName}
-      </h2>
-      <p style={{ marginTop: 0, marginBottom: '1.25rem', color: colors.textMuted }}>
-        Monitor your loved one&apos;s medicines and recent health updates in one calm view.
-      </p>
-
-      {loadError && (
-        <p style={{ color: colors.errorText, marginBottom: '1rem', fontSize: '1rem' }}>{loadError}</p>
-      )}
-
-      {allSosAlerts.length > 0 && (
-        <section style={{ marginBottom: '1.5rem' }}>
-          <h3 style={{ marginTop: 0, color: colors.errorText }}>SOS alerts</h3>
-          <div style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            {allSosAlerts.slice(0, 10).map((alert) => (
-              <div
-                key={alert.id || alert.time}
-                className="hover-card"
-                style={{
-                  borderRadius: '0.8rem',
-                  padding: '0.75rem 0.9rem',
-                  border: `2px solid ${colors.errorText}`,
-                  background: colors.surfaceSoft,
-                  fontWeight: 600,
-                  fontSize: '1rem',
-                  color: colors.text
-                }}
-              >
-                <span style={{ color: colors.errorText }}>SOS</span> — {alert.elderName || 'Elder'} · {alert.time ? new Date(alert.time).toLocaleString() : '—'}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{ marginTop: 0 }}>Elder overview</h3>
-        {elders.length > 1 && (
-          <div style={{ marginBottom: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-            {elders.map((e) => (
-              <button
-                key={e.id}
-                type="button"
-                className="interactive-surface"
-                onClick={() => setSelectedElderId(e.id)}
-                style={{
-                  padding: '0.5rem 1rem',
-                  borderRadius: '999px',
-                  border: `2px solid ${selectedElderId === e.id ? colors.primary : colors.borderSubtle}`,
-                  background: selectedElderId === e.id ? colors.surfaceSoft : 'transparent',
-                  color: colors.text,
-                  fontWeight: selectedElderId === e.id ? 600 : 400,
-                  cursor: 'pointer',
-                  fontSize: '1rem'
-                }}
-              >
-                {e.name || 'Elder'}
-              </button>
-            ))}
-          </div>
-        )}
-        <div
-          className="hover-card"
-          style={{
-            borderRadius: '0.9rem',
-            padding: '0.9rem 1rem',
-            border: `1px solid ${colors.borderSubtle}`,
-            background: colors.surfaceSoft,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.3rem',
-            fontSize: '1.02rem',
+            marginBottom: '1rem',
+            padding: '0.75rem 1rem',
+            borderRadius: radii.card,
+            background: 'rgba(220, 38, 38, 0.08)',
+            border: `1px solid ${colors.errorText}`,
             color: colors.text
           }}
+          aria-live="polite"
         >
-          {elders.length === 0 ? (
-            <>
-              <p style={{ color: colors.textMuted, margin: 0 }}>No elder linked. Enter the elder&apos;s phone number below to link.</p>
-              <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <input
-                  type="tel"
-                  placeholder="Elder's phone number"
-                  value={linkElderPhone}
-                  onChange={(e) => setLinkElderPhone(e.target.value)}
-                  style={{
-                    padding: '0.5rem 0.75rem',
-                    fontSize: '1rem',
-                    border: `1px solid ${colors.borderSubtle}`,
-                    borderRadius: '0.5rem'
-                  }}
-                />
-                <Button
-                  onClick={handleLinkToElder}
-                  disabled={linkLoading}
-                  style={{ marginTop: 0, alignSelf: 'flex-start' }}
-                >
-                  {linkLoading ? 'Linking…' : 'Link an elder'}
-                </Button>
-                {linkSuccessName && <p style={{ color: colors.successText, margin: 0, fontSize: '0.95rem' }}>Linked to {linkSuccessName}</p>}
-                {linkError && <p style={{ color: colors.errorText, margin: 0, fontSize: '0.95rem' }}>{linkError}</p>}
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 600 }}>{selectedElder?.name || 'Elder'}</span>
-                {allSosAlerts.length > 0 ? (
-                  <Tag tone="warning">SOS alert(s)</Tag>
-                ) : (
-                  <Tag tone="success">No active SOS</Tag>
-                )}
-              </div>
-              {(selectedElder?.age || selectedElder?.location) && (
-                <span>
-                  {selectedElder?.age ? `${selectedElder.age} years` : ''}{selectedElder?.age && selectedElder?.location ? ' • ' : ''}{selectedElder?.location || ''}
-                </span>
-              )}
-              {selectedElder?.primaryCondition && (
-                <span style={{ fontSize: '0.95rem', opacity: 0.9 }}>
-                  Condition: {selectedElder.primaryCondition}
-                </span>
-              )}
-              <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: `1px solid ${colors.borderSubtle}` }}>
-                <p style={{ color: colors.textMuted, margin: '0 0 0.5rem 0', fontSize: '0.95rem' }}>Link another elder</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <input
-                    type="tel"
-                    placeholder="Elder's phone number"
-                    value={linkElderPhone}
-                    onChange={(e) => setLinkElderPhone(e.target.value)}
-                    style={{
-                      padding: '0.5rem 0.75rem',
-                      fontSize: '1rem',
-                      border: `1px solid ${colors.borderSubtle}`,
-                      borderRadius: '0.5rem'
-                    }}
-                  />
-                  <Button
-                    onClick={handleLinkToElder}
-                    disabled={linkLoading}
-                    style={{ alignSelf: 'flex-start' }}
-                  >
-                    {linkLoading ? 'Linking…' : 'Link another elder'}
-                  </Button>
-                  {linkSuccessName && <p style={{ color: colors.successText, margin: 0, fontSize: '0.95rem' }}>Linked to {linkSuccessName}</p>}
-                  {linkError && <p style={{ color: colors.errorText, margin: 0, fontSize: '0.95rem' }}>{linkError}</p>}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </section>
-
-      {selectedElderId && (
-        <section style={{ marginBottom: '1.5rem' }}>
-          <h3 style={{ marginTop: 0 }}>Medicines</h3>
-          <form
-            onSubmit={handleAddMedicine}
-            style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', maxWidth: '24rem' }}
-          >
-            <input
-              type="text"
-              placeholder="Medicine name"
-              value={medicineForm.name}
-              onChange={(e) => setMedicineForm((f) => ({ ...f, name: e.target.value }))}
-              style={{ padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem' }}
-            />
-            <input
-              type="text"
-              placeholder="Dosage"
-              value={medicineForm.dosage}
-              onChange={(e) => setMedicineForm((f) => ({ ...f, dosage: e.target.value }))}
-              style={{ padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem' }}
-            />
-            <input
-              type="text"
-              placeholder="Time (e.g. 8:00 AM)"
-              value={medicineForm.time}
-              onChange={(e) => setMedicineForm((f) => ({ ...f, time: e.target.value }))}
-              style={{ padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem' }}
-            />
-            <input
-              type="text"
-              placeholder="Notes (optional)"
-              value={medicineForm.notes}
-              onChange={(e) => setMedicineForm((f) => ({ ...f, notes: e.target.value }))}
-              style={{ padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem' }}
-            />
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <Button type="submit" disabled={medicineLoading || !medicineForm.name.trim()}>
-                {medicineLoading ? 'Saving…' : editingMedicineId ? 'Update medicine' : 'Add medicine'}
-              </Button>
-              {editingMedicineId && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => { setEditingMedicineId(null); setMedicineForm({ name: '', dosage: '', time: '', notes: '' }); }}
-                >
-                  Cancel
-                </Button>
-              )}
-            </div>
-          </form>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            {medicines.length === 0 && (
-              <p style={{ color: colors.textMuted, fontSize: '0.95rem', margin: 0 }}>No medicines added yet.</p>
-            )}
-            {medicines.map((m) => (
-              <div
-                key={m.id}
-                className="hover-card"
-                style={{
-                  borderRadius: '0.8rem',
-                  padding: '0.75rem 0.9rem',
-                  border: `1px solid ${colors.borderSubtle}`,
-                  background: colors.surfaceSoft,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '0.5rem',
-                  fontSize: '0.98rem',
-                  color: colors.text
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600 }}>{m.name}</div>
-                  <div style={{ fontSize: '0.9rem', color: colors.textMuted }}>{m.dosage || '—'} · {m.time || '—'}</div>
-                  {m.notes && <div style={{ fontSize: '0.9rem', marginTop: '0.2rem' }}>{m.notes}</div>}
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <Button
-                    variant="secondary"
-                    onClick={() => { setEditingMedicineId(m.id); setMedicineForm({ name: m.name, dosage: m.dosage || '', time: m.time || '', notes: m.notes || '' }); }}
-                    disabled={medicineLoading}
-                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.9rem' }}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => handleDeleteMedicine(m.id)}
-                    disabled={medicineLoading}
-                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.9rem' }}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-          {scheduleSuggestions.length > 0 && (
-            <div
-              className="hover-card"
-              style={{
-                marginTop: '1rem',
-                padding: '1rem',
-                border: `1px solid ${colors.borderSubtle}`,
-                borderRadius: '0.9rem',
-                background: colors.surfaceSoft
-              }}
-            >
-              <h4 style={{ margin: '0 0 0.5rem', fontSize: '1.05rem' }}>Suggested times</h4>
-              {scheduleExplanation && (
-                <p style={{ margin: '0 0 0.75rem', fontSize: '0.95rem', color: colors.textMuted }}>{scheduleExplanation}</p>
-              )}
-              <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.98rem' }}>
-                {scheduleSuggestions.map((s) => (
-                  <li key={s.id}>
-                    <strong>{s.name}</strong>: {s.suggestedTime || '—'}
-                  </li>
-                ))}
-              </ul>
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-                <Button onClick={handleApplySchedule} disabled={medicineLoading}>
-                  {medicineLoading ? 'Applying…' : 'Apply'}
-                </Button>
-                <Button variant="secondary" onClick={() => { setScheduleSuggestions([]); setScheduleExplanation(''); }}>
-                  Dismiss
-                </Button>
-              </div>
-            </div>
-          )}
-        </section>
-      )}
-
-      {selectedElderId && (
-        <section style={{ marginBottom: '1.5rem' }}>
-          <h3 style={{ marginTop: 0 }}>Tasks</h3>
-          {simplifyResult && (
-            <div
-              className="hover-card"
-              style={{
-                marginBottom: '1rem',
-                padding: '0.75rem 1rem',
-                border: `1px solid ${colors.borderSubtle}`,
-                borderRadius: '0.5rem',
-                background: colors.surfaceSoft,
-                fontSize: '0.95rem'
-              }}
-            >
-              <div style={{ marginBottom: '0.5rem', color: colors.textMuted }}>Simplified description:</div>
-              <p style={{ margin: '0 0 0.5rem', color: colors.text }}>{simplifyResult.simplified}</p>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    setTaskForm((f) => ({ ...f, description: simplifyResult.simplified }));
-                    setSimplifyResult(null);
-                  }}
-                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.9rem' }}
-                >
-                  Use in description
-                </Button>
-                <Button type="button" variant="secondary" onClick={() => setSimplifyResult(null)} style={{ padding: '0.35rem 0.75rem', fontSize: '0.9rem' }}>
-                  Dismiss
-                </Button>
-              </div>
-            </div>
-          )}
-          <form
-            onSubmit={handleAddTask}
-            style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', maxWidth: '24rem' }}
-          >
-            <input
-              type="text"
-              placeholder="Task title"
-              value={taskForm.title}
-              onChange={(e) => setTaskForm((f) => ({ ...f, title: e.target.value }))}
-              style={{ padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem' }}
-            />
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <input
-                type="text"
-                placeholder="Description (optional)"
-                value={taskForm.description}
-                onChange={(e) => setTaskForm((f) => ({ ...f, description: e.target.value }))}
-                style={{ flex: 1, padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem' }}
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => handleSimplifyTask(taskForm.description)}
-                disabled={!taskForm.description.trim()}
-                style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem' }}
-              >
-                Simplify
-              </Button>
-            </div>
-            <input
-              type="text"
-              placeholder="Time (e.g. 9:00 AM)"
-              value={taskForm.time}
-              onChange={(e) => setTaskForm((f) => ({ ...f, time: e.target.value }))}
-              style={{ padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem' }}
-            />
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <Button type="submit" disabled={taskLoading || !taskForm.title.trim()}>
-                {taskLoading ? 'Saving…' : editingTaskId ? 'Update task' : 'Add task'}
-              </Button>
-              {editingTaskId && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => { setEditingTaskId(null); setTaskForm({ title: '', description: '', time: '' }); }}
-                >
-                  Cancel
-                </Button>
-              )}
-            </div>
-          </form>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            {tasks.length === 0 && (
-              <p style={{ color: colors.textMuted, fontSize: '0.95rem', margin: 0 }}>No tasks yet.</p>
-            )}
-            {tasks.map((t) => (
-              <div
-                key={t.id}
-                className="hover-card"
-                style={{
-                  borderRadius: '0.8rem',
-                  padding: '0.75rem 0.9rem',
-                  border: `1px solid ${colors.borderSubtle}`,
-                  background: colors.surfaceSoft,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '0.5rem',
-                  fontSize: '0.98rem',
-                  color: colors.text
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600 }}>{t.title || 'Task'}</div>
-                  {t.description && (
-                    <div style={{ fontSize: '0.9rem', color: colors.textMuted, display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <span>{t.description}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleSimplifyTask(t.description)}
-                        style={{
-                          padding: '0.2rem 0.5rem',
-                          fontSize: '0.8rem',
-                          border: `1px solid ${colors.borderSubtle}`,
-                          borderRadius: '0.35rem',
-                          background: 'transparent',
-                          cursor: 'pointer',
-                          color: colors.textMuted
-                        }}
-                      >
-                        Simplify
-                      </button>
-                    </div>
-                  )}
-                  <div style={{ fontSize: '0.9rem', color: colors.textMuted }}>{t.time || '—'} {t.completed && <Tag tone="success">Done</Tag>}</div>
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <Button
-                    variant="secondary"
-                    onClick={() => { setEditingTaskId(t.id); setTaskForm({ title: t.title || '', description: t.description || '', time: t.time || '' }); }}
-                    disabled={taskLoading}
-                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.9rem' }}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => handleDeleteTask(t.id)}
-                    disabled={taskLoading}
-                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.9rem' }}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{ marginTop: 0 }}>Recent health updates</h3>
-        <div style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-          {health.length === 0 && (
-            <p style={{ color: colors.textMuted, fontSize: '0.95rem', margin: 0 }}>No health updates yet.</p>
-          )}
-          {health.map((u) => (
-            <div
-              key={u.id}
-              className="hover-card"
-              style={{
-                borderRadius: '0.8rem',
-                padding: '0.75rem 0.9rem',
-                border: `1px solid ${colors.borderSubtle}`,
-                background: colors.surfaceSoft,
-                fontSize: '0.98rem',
-                color: colors.text
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '0.35rem'
-                }}
-              >
-                <span style={{ fontWeight: 600 }}>{u.summary}</span>
-                <span style={{ fontSize: '0.85rem', color: colors.textMuted }}>{u.time}</span>
-              </div>
-              <p style={{ margin: 0 }}>{u.details}</p>
+          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', color: colors.errorText }}>Inactive</h3>
+          {inactiveElders.map((e) => (
+            <div key={e.id} style={{ marginBottom: '0.35rem', fontSize: '0.95rem' }}>
+              Inactive: {e.name || 'Elder'} – last active {formatLastActive(e.lastActivityAt) || '—'}.
+              <Link to="/overview" style={{ marginLeft: '0.5rem', color: colors.primary, fontWeight: 600 }}>View overview</Link>
             </div>
           ))}
-        </div>
-      </section>
+        </section>
+      )}
 
-      <section style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{ marginTop: 0 }}>Medicine intake</h3>
-        <div style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-          {medicineIntakeLogs.length === 0 && (
-            <p style={{ color: colors.textMuted, fontSize: '0.95rem', margin: 0 }}>No intake logs yet.</p>
-          )}
-          {medicineIntakeLogs.map((log) => {
-            const isAck = !!acknowledgedIds[log.id];
-            return (
-              <div
-                key={log.id}
-                style={{
-                  borderRadius: '0.8rem',
-                  padding: '0.75rem 0.9rem',
-                  border: `1px solid ${colors.borderSubtle}`,
-                  background: colors.surfaceSoft,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  fontSize: '0.98rem',
-                  color: colors.text
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600 }}>{log.medicineName}</div>
-                  <div style={{ fontSize: '0.9rem', color: colors.textMuted }}>{log.time}</div>
-                  <div style={{ fontSize: '0.9rem', marginTop: '0.15rem' }}>
-                    Status:{' '}
-                    <Tag tone={log.status === 'Taken' ? 'success' : 'warning'}>
-                      {log.status}
-                    </Tag>
-                  </div>
-                </div>
-                {!isAck && (
-                  <button
-                    type="button"
-                    className="interactive-surface"
-                    onClick={() => acknowledge(log.id)}
-                    style={{
-                      borderRadius: '999px',
-                      padding: '0.35rem 0.9rem',
-                      border: `1px solid ${colors.borderSubtle}`,
-                      background: 'transparent',
-                      color: colors.text,
-                      cursor: 'pointer',
-                      fontSize: '0.9rem'
-                    }}
-                  >
-                    Mark seen
-                  </button>
-                )}
-                {isAck && (
-                  <span style={{ fontSize: '0.85rem', color: colors.successText }}>Seen</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      <h2 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.75rem', fontWeight: 700, textAlign: 'center' }}>Welcome, {currentUser.fullName}!</h2>
+      <p style={{ marginTop: 0, marginBottom: '0.75rem', color: colors.textMuted }}>Monitor your loved one&apos;s medicines and recent health updates in one calm view.</p>
 
-      <PasskeyRegister token={token} />
-      <PushSubscribe token={token} />
-      <Button variant="secondary" onClick={onLogout}>
-        Log out
-      </Button>
+      {loadError && <p style={{ color: colors.errorText, marginBottom: '1rem', fontSize: '1rem' }}>{loadError}</p>}
+
+      <div className="dashboard-hero-grid dashboard-hero-grid--family">
+        <button
+          type="button"
+          onClick={() => navigate('/sos-alerts')}
+          style={heroCardStyle('#dc2626')}
+          aria-label="SOS Alerts"
+          className={hoverSegment === 'sos' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('sos')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('sos')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          SOS Alerts
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/inactivity')}
+          style={heroCardStyle('#d97706')}
+          aria-label="Inactivity status"
+          className={hoverSegment === 'inactivity' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('inactivity')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('inactivity')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Inactivity
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/medicines')}
+          style={heroCardStyle('#f97316')}
+          aria-label="Medicines"
+          className={hoverSegment === 'medicines' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('medicines')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('medicines')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.5 20H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4"/><path d="M12 9v11"/><path d="M8 14h8"/></svg>
+          Medicines
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/tasks')}
+          style={heroCardStyle('#22c55e')}
+          aria-label="Tasks"
+          className={hoverSegment === 'tasks' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('tasks')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('tasks')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          Tasks
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/routine')}
+          style={heroCardStyle('#8b5cf6')}
+          aria-label="Routine summary"
+          className={hoverSegment === 'routine' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('routine')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('routine')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>
+          Routine
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/voice-assistant')}
+          style={heroCardStyle('#3b82f6')}
+          aria-label="Voice assistant"
+          className={hoverSegment === 'voice' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('voice')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('voice')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>
+          Voice assistant
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/overview')}
+          style={heroCardStyle('#6366f1')}
+          aria-label="Elder overview"
+          className={hoverSegment === 'overview' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('overview')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('overview')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+          Elder overview
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/calendar')}
+          style={heroCardStyle('#0d9488')}
+          aria-label="Calendar"
+          className={hoverSegment === 'calendar' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('calendar')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('calendar')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          Calendar
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/timeline')}
+          style={heroCardStyle('#059669')}
+          aria-label="Timeline"
+          className={hoverSegment === 'timeline' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('timeline')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('timeline')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+          Timeline
+        </button>
+      </div>
+      {hoverSegment && FAMILY_SEGMENT_TOOLTIPS[hoverSegment] && (
+        <p className="dashboard-hero-tooltip" role="status">{FAMILY_SEGMENT_TOOLTIPS[hoverSegment]}</p>
+      )}
     </div>
   );
 }
 
 export default FamilyDashboard;
-

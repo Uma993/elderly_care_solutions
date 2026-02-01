@@ -1,543 +1,186 @@
-import React, { useEffect, useState } from 'react';
-import Button from '../ui/Button.jsx';
-import Tag from '../ui/Tag.jsx';
-import PasskeyRegister from '../PasskeyRegister.jsx';
-import PushSubscribe from '../PushSubscribe.jsx';
-import VoiceAssistant from '../VoiceAssistant.jsx';
-import { colors } from '../../design/tokens';
-import { getElderDashboardData } from '../../firebase/dashboardData.js';
+import React, { useEffect } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { colors, radii } from '../../design/tokens';
 import { API_BASE_URL, getAuthHeaders } from '../../api';
+import { useHoverSegments, ELDER_SEGMENT_TOOLTIPS } from '../../hooks/useHoverSegments';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const heroCardStyle = (bg) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '0.5rem',
+  padding: '1rem',
+  minHeight: 120,
+  borderRadius: radii.card,
+  background: bg,
+  color: '#fff',
+  border: 'none',
+  cursor: 'pointer',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+  fontSize: '1rem',
+  fontWeight: 600
+});
 
 function ElderDashboard({ currentUser, token, onLogout }) {
-  const [medicines, setMedicines] = useState([]);
-  const [medicineIntakeLogs, setMedicineIntakeLogs] = useState([]);
-  const [tasks, setTasks] = useState([]);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [sosSent, setSosSent] = useState(false);
-  const [markingId, setMarkingId] = useState(null);
-  const [completingTaskId, setCompletingTaskId] = useState(null);
-  const [recommendations, setRecommendations] = useState([]);
-  const [reminders, setReminders] = useState([]);
-  const [checklist, setChecklist] = useState([]);
-  const [reminderForm, setReminderForm] = useState({ text: '', at: '' });
-  const [todoInput, setTodoInput] = useState('');
-  const [reminderLoading, setReminderLoading] = useState(false);
-  const [todoLoading, setTodoLoading] = useState(false);
-  const [togglingReminderId, setTogglingReminderId] = useState(null);
-  const [togglingTodoId, setTogglingTodoId] = useState(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { hoverSegment, onEnter, onLeave } = useHoverSegments();
 
   useEffect(() => {
-    let isMounted = true;
-
-    async function load() {
-      try {
-        const data = await getElderDashboardData(currentUser.id, token);
-        if (!isMounted || !data) return;
-        if (Array.isArray(data.medicines) && data.medicines.length > 0) {
-          setMedicines(
-            data.medicines.map((m) => ({
-              id: m.id,
-              name: m.title || m.name || m.name || 'Medicine',
-              dosage: m.details || m.dosage || '',
-              times: Array.isArray(m.times) ? m.times : (m.time ? [m.time] : [''])
-            }))
-          );
-        } else {
-          setMedicines([]);
-        }
-        setMedicineIntakeLogs(Array.isArray(data.medicineIntakeLogs) ? data.medicineIntakeLogs : []);
-        setTasks(Array.isArray(data.tasks) ? data.tasks : []);
-      } catch (error) {
-      }
-    }
-
-    load();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUser.id, token, refreshTrigger]);
-
-  // Recommendations (elder only)
-  useEffect(() => {
-    let isMounted = true;
-    async function load() {
-      try {
-        const res = await fetch(`${API_BASE_URL}/ai/recommendations`, { headers: getAuthHeaders(token) });
-        if (!res.ok || !isMounted) return;
-        const data = await res.json().catch(() => ({}));
-        if (isMounted && Array.isArray(data.recommendations)) setRecommendations(data.recommendations);
-      } catch (_) {}
-    }
-    load();
-  }, [token, refreshTrigger]);
-
-  // Reminders and checklist (elder only)
-  useEffect(() => {
-    let isMounted = true;
-    async function load() {
-      try {
-        const [remRes, listRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/ai/reminders`, { headers: getAuthHeaders(token) }),
-          fetch(`${API_BASE_URL}/ai/checklist`, { headers: getAuthHeaders(token) })
-        ]);
-        if (!isMounted) return;
-        if (remRes.ok) {
-          const d = await remRes.json().catch(() => ({}));
-          setReminders(Array.isArray(d.reminders) ? d.reminders : []);
-        }
-        if (listRes.ok) {
-          const d = await listRes.json().catch(() => ({}));
-          setChecklist(Array.isArray(d.checklist) ? d.checklist : []);
-        }
-      } catch (_) {}
-    }
-    load();
-  }, [token, refreshTrigger]);
-
-  const takenTodaySet = new Set(
-    medicineIntakeLogs
-      .filter((log) => log.date === today() && log.medicineId)
-      .map((log) => log.medicineId)
-  );
-
-  const handleMarkTaken = async (medicineId) => {
-    setMarkingId(medicineId);
-    try {
-      const res = await fetch(
-        `${API_BASE_URL}/elders/${currentUser.id}/medicines/${medicineId}/taken`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-          body: JSON.stringify({})
-        }
-      );
-      if (res.ok) setRefreshTrigger((t) => t + 1);
-    } catch {
-      // keep UI unchanged on error
-    } finally {
-      setMarkingId(null);
-    }
-  };
-
-  const handleTaskComplete = async (taskId) => {
-    setCompletingTaskId(taskId);
-    try {
-      const res = await fetch(
-        `${API_BASE_URL}/elders/${currentUser.id}/tasks/${taskId}/complete`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-          body: JSON.stringify({})
-        }
-      );
-      if (res.ok) setRefreshTrigger((t) => t + 1);
-    } catch {
-      // keep UI unchanged on error
-    } finally {
-      setCompletingTaskId(null);
-    }
-  };
-
-  const handleAddReminder = async (e) => {
-    e.preventDefault();
-    if (!reminderForm.text.trim() || reminderLoading) return;
-    setReminderLoading(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/ai/reminders`, {
+    if (!token || currentUser?.role !== 'elderly') return;
+    const heartbeat = () => {
+      fetch(`${API_BASE_URL}/activity/heartbeat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-        body: JSON.stringify({ text: reminderForm.text.trim(), at: reminderForm.at.trim() })
-      });
-      if (res.ok) {
-        setReminderForm({ text: '', at: '' });
-        setRefreshTrigger((t) => t + 1);
-      }
-    } catch (_) {}
-    setReminderLoading(false);
-  };
-
-  const handleReminderDone = async (id, done) => {
-    setTogglingReminderId(id);
-    try {
-      const res = await fetch(`${API_BASE_URL}/ai/reminders/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-        body: JSON.stringify({ done })
-      });
-      if (res.ok) setRefreshTrigger((t) => t + 1);
-    } catch (_) {}
-    setTogglingReminderId(null);
-  };
-
-  const handleAddTodo = async (e) => {
-    e.preventDefault();
-    if (!todoInput.trim() || todoLoading) return;
-    setTodoLoading(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/ai/checklist`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-        body: JSON.stringify({ text: todoInput.trim() })
-      });
-      if (res.ok) {
-        setTodoInput('');
-        setRefreshTrigger((t) => t + 1);
-      }
-    } catch (_) {}
-    setTodoLoading(false);
-  };
-
-  const handleToggleTodo = async (id) => {
-    setTogglingTodoId(id);
-    try {
-      const res = await fetch(`${API_BASE_URL}/ai/checklist/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) }
-      });
-      if (res.ok) setRefreshTrigger((t) => t + 1);
-    } catch (_) {}
-    setTogglingTodoId(null);
-  };
-
-  const handleDeleteTodo = async (id) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/ai/checklist/${id}`, {
-        method: 'DELETE',
         headers: getAuthHeaders(token)
-      });
-      if (res.ok) setRefreshTrigger((t) => t + 1);
-    } catch (_) {}
-  };
+      }).catch(() => {});
+    };
+    heartbeat();
+    const interval = setInterval(heartbeat, 30 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [token, currentUser?.role]);
 
-  const handleSOS = async () => {
-    let body = {};
-    if (navigator.geolocation) {
-      try {
-        const pos = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 60000 });
-        });
-        if (pos?.coords) {
-          body = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        }
-      } catch {
-        // send SOS without location
-      }
+  useEffect(() => {
+    if (location.pathname === '/wellbeing-check' || searchParams.get('wellbeing') === '1') {
+      navigate('/home?wellbeing=1', { replace: true });
+      if (location.pathname === '/wellbeing-check') setSearchParams({}, { replace: true });
     }
-    try {
-      const res = await fetch(`${API_BASE_URL}/sos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
-        body: JSON.stringify(body)
-      });
-      if (res.ok) {
-        setSosSent(true);
-      }
-    } catch {
-      // show sent anyway for UX
-      setSosSent(true);
-    }
-  };
+  }, [location.pathname, searchParams, navigate, setSearchParams]);
+
+  if (!currentUser) return null;
 
   return (
-    <div>
-      <h2 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.5rem' }}>Good day, {currentUser.fullName}</h2>
-      <p style={{ marginTop: 0, marginBottom: '1.25rem', color: colors.textMuted, fontSize: '1.05rem' }}>
-        Here are your medicines for today and a quick help button if you feel unwell.
-      </p>
+    <div className="dashboard-expanded">
+      <h2 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.75rem', fontWeight: 700, textAlign: 'center' }}>Welcome, {currentUser.fullName}!</h2>
 
-      <section style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{ marginTop: 0, fontSize: '1.2rem' }}>Voice assistant</h3>
-        <p style={{ marginTop: '0.2rem', marginBottom: '0.5rem', color: colors.textMuted, fontSize: '0.95rem' }}>
-          Hold the mic and ask about your medicines, tasks, or say &quot;I need help&quot; for SOS.
-        </p>
-        <VoiceAssistant token={token} onAction={() => setRefreshTrigger((t) => t + 1)} />
-      </section>
-
-      {recommendations.length > 0 && (
-        <section style={{ marginBottom: '1.5rem' }}>
-          <h3 style={{ marginTop: 0, fontSize: '1.2rem' }}>Daily tips</h3>
-          <div
-            className="hover-card"
-            style={{
-              borderRadius: '0.9rem',
-              padding: '0.9rem 1rem',
-              border: `1px solid ${colors.borderSubtle}`,
-              background: colors.surfaceSoft,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.5rem'
-            }}
-          >
-            {recommendations.map((tip, i) => (
-              <p key={i} style={{ margin: 0, fontSize: '1rem', color: colors.text }}>
-                {tip}
-              </p>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{ marginTop: 0, fontSize: '1.2rem' }}>Reminders</h3>
-        <form onSubmit={handleAddReminder} style={{ marginBottom: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-          <input
-            type="text"
-            placeholder="What to remind"
-            value={reminderForm.text}
-            onChange={(e) => setReminderForm((f) => ({ ...f, text: e.target.value }))}
-            style={{ padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem', minWidth: '10rem' }}
-          />
-          <input
-            type="text"
-            placeholder="Time (e.g. 17:00)"
-            value={reminderForm.at}
-            onChange={(e) => setReminderForm((f) => ({ ...f, at: e.target.value }))}
-            style={{ padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem', width: '6rem' }}
-          />
-          <Button type="submit" disabled={reminderLoading || !reminderForm.text.trim()}>
-            {reminderLoading ? '…' : 'Add reminder'}
-          </Button>
-        </form>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {reminders.length === 0 && (
-            <p style={{ color: colors.textMuted, fontSize: '0.95rem', margin: 0 }}>No reminders. Add one or say &quot;Remind me at 5 to call&quot; via voice.</p>
-          )}
-          {reminders.map((r) => (
-            <div
-              key={r.id}
-              className="hover-card"
-              style={{
-                borderRadius: '0.8rem',
-                padding: '0.6rem 0.9rem',
-                border: `1px solid ${colors.borderSubtle}`,
-                background: r.done ? colors.successBg : colors.surfaceSoft,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                fontSize: '1rem',
-                color: colors.text
-              }}
-            >
-              <div>
-                <span style={{ textDecoration: r.done ? 'line-through' : 'none' }}>{r.text}</span>
-                {r.at && <span style={{ marginLeft: '0.5rem', fontSize: '0.9rem', color: colors.textMuted }}>at {r.at}</span>}
-              </div>
-              <button
-                type="button"
-                onClick={() => handleReminderDone(r.id, !r.done)}
-                disabled={togglingReminderId === r.id}
-                style={{
-                  padding: '0.35rem 0.75rem',
-                  fontSize: '0.9rem',
-                  border: `1px solid ${colors.borderSubtle}`,
-                  borderRadius: '0.5rem',
-                  background: colors.surfaceSoft,
-                  cursor: togglingReminderId === r.id ? 'wait' : 'pointer'
-                }}
-              >
-                {togglingReminderId === r.id ? '…' : r.done ? 'Undo' : 'Done'}
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{ marginTop: 0, fontSize: '1.2rem' }}>My to-do list</h3>
-        <form onSubmit={handleAddTodo} style={{ marginBottom: '0.75rem', display: 'flex', gap: '0.5rem' }}>
-          <input
-            type="text"
-            placeholder="Add item (or say &quot;Add to my list: …&quot; via voice)"
-            value={todoInput}
-            onChange={(e) => setTodoInput(e.target.value)}
-            style={{ flex: 1, padding: '0.5rem 0.75rem', fontSize: '1rem', border: `1px solid ${colors.borderSubtle}`, borderRadius: '0.5rem' }}
-          />
-          <Button type="submit" disabled={todoLoading || !todoInput.trim()}>
-            {todoLoading ? '…' : 'Add'}
-          </Button>
-        </form>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {checklist.length === 0 && (
-            <p style={{ color: colors.textMuted, fontSize: '0.95rem', margin: 0 }}>No items. Add one above or via voice.</p>
-          )}
-          {checklist.map((item) => (
-            <div
-              key={item.id}
-              className="hover-card"
-              style={{
-                borderRadius: '0.8rem',
-                padding: '0.6rem 0.9rem',
-                border: `1px solid ${colors.borderSubtle}`,
-                background: item.done ? colors.successBg : colors.surfaceSoft,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.75rem',
-                fontSize: '1rem',
-                color: colors.text
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={!!item.done}
-                onChange={() => handleToggleTodo(item.id)}
-                disabled={togglingTodoId === item.id}
-                style={{ width: '1.2rem', height: '1.2rem', cursor: togglingTodoId === item.id ? 'wait' : 'pointer' }}
-              />
-              <span style={{ flex: 1, textDecoration: item.done ? 'line-through' : 'none' }}>{item.text}</span>
-              <button
-                type="button"
-                onClick={() => handleDeleteTodo(item.id)}
-                aria-label="Delete"
-                style={{
-                  padding: '0.25rem 0.5rem',
-                  fontSize: '0.9rem',
-                  border: `1px solid ${colors.borderSubtle}`,
-                  borderRadius: '0.5rem',
-                  background: 'transparent',
-                  cursor: 'pointer',
-                  color: colors.textMuted
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section style={{ marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Today&apos;s medicines</h3>
-          <Tag tone="success">Tap when taken</Tag>
-        </div>
-
-        <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {medicines.length === 0 && (
-            <p style={{ color: colors.textMuted, fontSize: '0.95rem' }}>No medicines added yet. Add them in your profile or ask a family member.</p>
-          )}
-          {medicines.map((m) => {
-            const isTaken = takenTodaySet.has(m.id);
-            const isMarking = markingId === m.id;
-            return (
-              <button
-                key={m.id}
-                type="button"
-                className="hover-card"
-                onClick={() => !isTaken && !isMarking && handleMarkTaken(m.id)}
-                disabled={isTaken || isMarking}
-                style={{
-                  textAlign: 'left',
-                  borderRadius: '0.9rem',
-                  padding: '0.8rem 0.9rem',
-                  border: `1px solid ${colors.borderSubtle}`,
-                  background: isTaken ? colors.successBg : colors.surfaceSoft,
-                  color: colors.text,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  fontSize: '1.02rem',
-                  cursor: isTaken || isMarking ? 'default' : 'pointer'
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600 }}>{m.name}</div>
-                  <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>{m.dosage}</div>
-                  <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>Time: {m.times.join(', ') || '—'}</div>
-                </div>
-                <Tag tone={isTaken ? 'success' : 'warning'}>
-                  {isMarking ? 'Saving…' : isTaken ? 'Taken' : 'Tap when taken'}
-                </Tag>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{ marginTop: 0, fontSize: '1.2rem' }}>Today&apos;s tasks</h3>
-        <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {tasks.length === 0 && (
-            <p style={{ color: colors.textMuted, fontSize: '0.95rem' }}>No tasks for today.</p>
-          )}
-          {tasks.map((t) => {
-            const isComplete = !!t.completed;
-            const isCompleting = completingTaskId === t.id;
-            return (
-              <div
-                key={t.id}
-                className="hover-card"
-                style={{
-                  borderRadius: '0.9rem',
-                  padding: '0.8rem 0.9rem',
-                  border: `1px solid ${colors.borderSubtle}`,
-                  background: isComplete ? colors.successBg : colors.surfaceSoft,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: '0.75rem',
-                  fontSize: '1.02rem',
-                  color: colors.text
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600 }}>{t.title || 'Task'}</div>
-                  {t.description && <div style={{ fontSize: '0.9rem', opacity: 0.9, marginTop: '0.2rem' }}>{t.description}</div>}
-                  {t.time && <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>Time: {t.time}</div>}
-                </div>
-                {!isComplete ? (
-                  <Button
-                    onClick={() => handleTaskComplete(t.id)}
-                    disabled={isCompleting}
-                    style={{ minHeight: '2.5rem', padding: '0.5rem 1rem' }}
-                  >
-                    {isCompleting ? '…' : 'Done'}
-                  </Button>
-                ) : (
-                  <Tag tone="success">Done</Tag>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{ marginTop: 0, fontSize: '1.2rem' }}>Need quick help?</h3>
-        <p style={{ marginTop: '0.2rem', marginBottom: '0.9rem', color: colors.textMuted, fontSize: '1.05rem' }}>
-          If you suddenly feel unwell, press the SOS button so your family can check on you.
-        </p>
-        <Button
-          variant="danger"
-          onClick={handleSOS}
-          style={{ minHeight: 56, fontSize: '1.25rem', padding: '0.75rem 1.5rem' }}
+      <div className="dashboard-hero-grid">
+        <button
+          type="button"
+          onClick={() => navigate('/home')}
+          style={heroCardStyle('#6366f1')}
+          aria-label="Overview"
+          className={hoverSegment === 'overview' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('overview')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('overview')}
+          onBlur={onLeave}
+          tabIndex={0}
         >
-          SOS – I need help
-        </Button>
-        {sosSent && (
-          <p className="info-message" style={{ marginTop: '0.75rem' }}>
-            SOS alert noted. Your family members will be notified in the monitoring portal.
-          </p>
-        )}
-      </section>
-
-      <section style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{ marginTop: 0, fontSize: '1.2rem' }}>Notifications</h3>
-        <p style={{ marginTop: '0.2rem', marginBottom: '0.5rem', color: colors.textMuted, fontSize: '0.95rem' }}>
-          Enable medicine reminders on this device.
-        </p>
-        <PushSubscribe token={token} />
-      </section>
-
-      <PasskeyRegister token={token} />
-      <Button variant="secondary" onClick={onLogout}>
-        Log out
-      </Button>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          Overview
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/tasks')}
+          style={heroCardStyle('#22c55e')}
+          aria-label="Today's Tasks"
+          className={hoverSegment === 'tasks' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('tasks')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('tasks')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          Today&apos;s Tasks
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/medicines')}
+          style={heroCardStyle('#f97316')}
+          aria-label="Medication Reminder"
+          className={hoverSegment === 'medicines' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('medicines')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('medicines')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.5 20H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4"/><path d="M12 9v11"/><path d="M8 14h8"/></svg>
+          Medication Reminder
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/routine')}
+          style={heroCardStyle('#8b5cf6')}
+          aria-label="Routine summary"
+          className={hoverSegment === 'routine' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('routine')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('routine')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>
+          Routine
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/calendar')}
+          style={heroCardStyle('#0d9488')}
+          aria-label="Calendar"
+          className={hoverSegment === 'calendar' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('calendar')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('calendar')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          Calendar
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/timeline')}
+          style={heroCardStyle('#059669')}
+          aria-label="Timeline"
+          className={hoverSegment === 'timeline' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('timeline')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('timeline')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+          Timeline
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/voice-assistant')}
+          style={heroCardStyle('#3b82f6')}
+          aria-label="Request Help"
+          className={hoverSegment === 'voice' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('voice')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('voice')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>
+          Request Help
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/sos')}
+          style={heroCardStyle('#dc2626')}
+          aria-label="SOS Emergency"
+          className={hoverSegment === 'sos' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('sos')}
+          onMouseLeave={onLeave}
+          onFocus={() => onEnter('sos')}
+          onBlur={onLeave}
+          tabIndex={0}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          SOS Emergency
+        </button>
+      </div>
+      {hoverSegment && ELDER_SEGMENT_TOOLTIPS[hoverSegment] && (
+        <p className="dashboard-hero-tooltip" role="status">{ELDER_SEGMENT_TOOLTIPS[hoverSegment]}</p>
+      )}
     </div>
   );
 }
 
 export default ElderDashboard;
-

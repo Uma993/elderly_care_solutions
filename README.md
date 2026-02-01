@@ -1,6 +1,6 @@
 # Elderly Care
 
-A web app for elders and family members: elder dashboard (medicines, tasks, SOS), family dashboard (link elders by phone, manage medicines and tasks, view SOS alerts), PWA install, and optional passkey (fingerprint/face) login.
+A web app for elders and family members: elder dashboard (medicines, tasks, SOS, calendar timeline), family dashboard (link elders by phone, manage medicines and tasks, view SOS alerts), PWA install, and optional passkey (fingerprint/face) login.
 
 ## Setup and run
 
@@ -8,6 +8,10 @@ A web app for elders and family members: elder dashboard (medicines, tasks, SOS)
 - **Frontend:** `cd frontend && npm install && npm run dev` (Vite default, e.g. http://localhost:5173).
 
 AI (voice assistant, daily tips, optimize schedule, simplify text) uses Google Gemini (free tier). Voice input and output use the browser’s microphone and speech synthesis.
+
+## Calendar and timeline
+
+Elders can switch to the **Timeline** tab to see a week strip and a daily timeline of medicines, tasks, reminders, and to-do items. The calendar reuses existing data; no separate store. Routes used: `GET /api/elders/:elderId/medicines`, `GET /api/elders/:elderId/tasks`, `GET/POST/PATCH /api/ai/reminders`, `GET/POST/PATCH/DELETE /api/ai/checklist`, `POST /api/elders/:elderId/medicines/:id/taken`, `POST /api/elders/:elderId/tasks/:id/complete`. Optional fields for per-day scheduling: **reminder** `date` (YYYY-MM-DD) in `POST /api/ai/reminders`; **task** `date` (YYYY-MM-DD) in `POST`/`PUT /api/elders/:elderId/tasks`. If `date` is omitted, items appear on "today" in the timeline.
 
 ## WebAuthn (passkey) testing notes
 

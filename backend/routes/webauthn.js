@@ -15,6 +15,7 @@ const {
   getCredentialById,
   updateCredentialCounter
 } = require('../data/webauthnCredentials');
+const { create: createChangePasswordToken } = require('../data/changePasswordTokens');
 
 const rpId = process.env.WEBAUTHN_RP_ID || 'localhost';
 const rpName = process.env.WEBAUTHN_RP_NAME || 'Elderly Care';
@@ -205,6 +206,91 @@ router.post('/login-verify', async (req, res) => {
   } catch (err) {
     console.warn('WebAuthn login-verify failed:', err.message);
     return res.status(400).json({ message: 'Verification failed. Try again or sign in with password.' });
+  }
+});
+
+// GET /api/auth/webauthn/password-change-options — requireAuth; returns auth options for current user (for "verify with passkey" before change password)
+router.get('/password-change-options', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const user = findByEmail(req.auth.email);
+    if (!user || user.id !== userId) {
+      return res.status(401).json({ message: 'User not found.' });
+    }
+
+    const credentials = getCredentialsByUserId(userId);
+    if (!credentials.length) {
+      return res.status(400).json({ message: 'No passkey registered. Use current password to change password.' });
+    }
+
+    clearExpiredChallenges(authenticationChallenges);
+    const allowCredentials = credentials.map((c) => ({ id: c.credentialID }));
+
+    const options = await generateAuthenticationOptions({
+      rpID: rpId,
+      allowCredentials,
+      userVerification: 'required'
+    });
+
+    authenticationChallenges.set(userId, { challenge: options.challenge, createdAt: Date.now() });
+    return res.json(options);
+  } catch (err) {
+    console.warn('WebAuthn password-change-options failed:', err.message);
+    return res.status(500).json({ message: err.message || 'Failed to get options.' });
+  }
+});
+
+// POST /api/auth/webauthn/verify-for-password-change — requireAuth; body: assertion from client; returns changePasswordToken
+router.post('/verify-for-password-change', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.userId;
+    const rawCredentialId = req.body?.id;
+    const credentialId = normaliseCredentialId(rawCredentialId);
+    if (!credentialId) {
+      return res.status(400).json({ message: 'Invalid response.' });
+    }
+
+    const credentialUserId = getUserIdByCredentialId(credentialId);
+    if (!credentialUserId || credentialUserId !== userId) {
+      return res.status(400).json({ message: 'Credential does not belong to this account.' });
+    }
+
+    const stored = authenticationChallenges.get(userId);
+    if (!stored) {
+      return res.status(400).json({ message: 'Session expired. Please try again.' });
+    }
+    authenticationChallenges.delete(userId);
+
+    const credential = getCredentialById(userId, credentialId);
+    if (!credential) {
+      return res.status(400).json({ message: 'Credential not found.' });
+    }
+
+    const verification = await verifyAuthenticationResponse({
+      response: req.body,
+      expectedChallenge: stored.challenge,
+      expectedOrigin: getOrigin(req),
+      expectedRPID: rpId,
+      credential: {
+        id: credential.credentialID,
+        publicKey: credential.publicKey,
+        counter: credential.counter
+      }
+    });
+
+    if (!verification.verified) {
+      return res.status(400).json({ message: 'Verification failed.' });
+    }
+
+    if (verification.authenticationInfo) {
+      updateCredentialCounter(userId, credentialId, verification.authenticationInfo.newCounter);
+    }
+
+    const changePasswordToken = createChangePasswordToken(userId);
+    return res.json({ verified: true, changePasswordToken });
+  } catch (err) {
+    console.warn('WebAuthn verify-for-password-change failed:', err.message);
+    return res.status(400).json({ message: err.message || 'Verification failed.' });
   }
 });
 

@@ -59,6 +59,18 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(fetch(request));
 });
 
+function tagForType(type) {
+  if (type === 'sos') return 'sos';
+  if (type === 'medicine' || type === 'medicine_reminder') return 'medicine-reminder';
+  if (type === 'inactive') return 'inactive';
+  if (type === 'refill_requested') return 'refill-requested';
+  if (type === 'refill_reminder') return 'refill-reminder';
+  if (type === 'task_completed') return 'task-completed';
+  if (type === 'wellbeing' || type === 'wellbeing_check' || type === 'not_well') return 'wellbeing';
+  if (type === 'reminder') return 'reminder';
+  return type || 'alert';
+}
+
 self.addEventListener('push', (event) => {
   let title = 'SOS';
   let body = 'An elder needs help.';
@@ -76,14 +88,14 @@ self.addEventListener('push', (event) => {
     } catch (_) {}
   }
   const openUrl = pushData.url || url;
-  const isMedicine = type === 'medicine';
+  const isUrgent = type === 'sos';
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      vibrate: isMedicine ? [] : [500, 200, 500, 200, 500, 200, 1000],
-      requireInteraction: !isMedicine,
+      vibrate: isUrgent ? [500, 200, 500, 200, 500, 200, 1000] : [],
+      requireInteraction: isUrgent,
       data: { url: openUrl, ...pushData },
-      tag: isMedicine ? 'medicine-reminder' : 'sos'
+      tag: tagForType(type)
     })
   );
 });
@@ -92,7 +104,11 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const data = event.notification.data || {};
   const url = data.url || '/';
-  const fullUrl = url.startsWith('http') ? url : self.location.origin + (url.startsWith('/') ? url : '/' + url);
+  let fullUrl = url.startsWith('http') ? url : self.location.origin + (url.startsWith('/') ? url : '/' + url);
+  if (data.type === 'reminder' || event.notification.tag === 'reminder') {
+    fullUrl += fullUrl.includes('?') ? '&' : '?';
+    fullUrl += 'from=reminder';
+  }
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {

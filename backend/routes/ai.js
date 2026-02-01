@@ -14,6 +14,7 @@ const {
   deleteChecklistItem,
   appendSosAlert,
   getLinkedFamilyIds,
+  setLastActivityAt,
   isConfigured
 } = require('../services/firebase');
 const { getSubscriptionsByUserId } = require('../data/pushSubscriptions');
@@ -53,11 +54,7 @@ async function geminiGenerate(systemPrompt, userContent, maxOutputTokens = 256) 
   return response.text().trim();
 }
 
-/** In-memory cache for recommendations: userId -> { recommendations, expiresAt } */
-const recommendationsCache = new Map();
-const RECOMMENDATIONS_CACHE_MS = 8 * 60 * 1000; // 8 minutes
-
-/** Build elder context string for voice/recommendations (medicines, tasks). */
+/** Build elder context string for voice (medicines, tasks). */
 async function buildElderContext(userId) {
   if (!isConfigured()) return '';
   try {
@@ -149,53 +146,22 @@ router.post('/voice', requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.warn('POST /api/ai/voice failed:', err.message);
+    const is429 = err.status === 429 || err.response?.status === 429 || (err.message && String(err.message).includes('429'));
+    if (is429) {
+      return res.status(503).json({ message: 'Voice is busy; try again in a moment.' });
+    }
     return res.status(500).json({ message: err.message || 'Voice request failed.' });
   }
 });
 
-/** GET /api/ai/recommendations — elder context -> 1–3 short wellness tips (cached ~8 min) */
+/** GET /api/ai/recommendations — static tips (no Gemini); Daily tips can still render */
 router.get('/recommendations', requireAuth, async (req, res) => {
-  if (!genAI || !GEMINI_API_KEY) {
-    return res.status(503).json({ message: 'Recommendations not configured (GEMINI_API_KEY missing).' });
-  }
-  const userId = req.auth.userId;
-  const role = req.auth.role;
-  const cached = recommendationsCache.get(userId);
-  if (cached && cached.expiresAt > Date.now()) {
-    return res.json({ recommendations: cached.recommendations });
-  }
-  try {
-    let context = '';
-    if (role === 'elderly' && isConfigured()) {
-      const [medicines, tasks, reminders] = await Promise.all([
-        getElderMedicines(userId),
-        getElderTasks(userId),
-        getReminders(userId)
-      ]);
-      const medStr = medicines.length ? 'Medicines: ' + medicines.map((m) => `${m.name}${m.time ? ' at ' + m.time : ''}`).join('; ') : 'No medicines.';
-      const taskStr = tasks.length ? 'Tasks: ' + tasks.map((t) => `${t.title}${t.time ? ' at ' + t.time : ''}`).join('; ') : 'No tasks.';
-      const remStr = reminders.length ? 'Reminders: ' + reminders.filter((r) => !r.done).map((r) => r.text).join('; ') : '';
-      context = [medStr, taskStr, remStr].filter(Boolean).join('\n');
-    }
-    const prompt = context
-      ? `Given this elder context (no medical dosage), give 1–3 short, generic wellness tips. Reply with a JSON array of strings only, e.g. ["Tip one.", "Tip two."]. No medical advice.\n\nContext:\n${context}`
-      : 'Give 1–3 short, generic daily wellness tips for an older adult. Reply with a JSON array of strings only. You output only a JSON array of 1–3 short tip strings. No other text.';
-    const raw = await geminiGenerate('You output only a JSON array of 1–3 short tip strings. No other text.', prompt, 200) || '[]';
-    let recommendations = [];
-    const arrMatch = raw.match(/\[[\s\S]*\]/);
-    if (arrMatch) {
-      try {
-        recommendations = JSON.parse(arrMatch[0]);
-        if (!Array.isArray(recommendations)) recommendations = [];
-        recommendations = recommendations.slice(0, 3).filter((s) => typeof s === 'string' && s.trim());
-      } catch (_) {}
-    }
-    recommendationsCache.set(userId, { recommendations, expiresAt: Date.now() + RECOMMENDATIONS_CACHE_MS });
-    return res.json({ recommendations });
-  } catch (err) {
-    console.warn('GET /api/ai/recommendations failed:', err.message);
-    return res.status(500).json({ message: err.message || 'Failed to load recommendations.' });
-  }
+  const recommendations = [
+    'Take a short walk or stretch when you can.',
+    'Drink water regularly throughout the day.',
+    'Rest when you need to—it helps you stay well.'
+  ];
+  return res.json({ recommendations });
 });
 
 function requireElder(req, res, next) {
@@ -218,12 +184,17 @@ router.get('/reminders', requireAuth, requireElder, async (req, res) => {
 
 /** POST /api/ai/reminders — elder only */
 router.post('/reminders', requireAuth, requireElder, async (req, res) => {
-  const { text, at } = req.body || {};
+  const { text, at, date } = req.body || {};
   if (!text || typeof text !== 'string' || !text.trim()) {
     return res.status(400).json({ message: 'Text is required.' });
   }
   try {
-    const reminder = await addReminder(req.auth.userId, { text: text.trim(), at: at || '', createdVia: 'manual' });
+    const reminder = await addReminder(req.auth.userId, {
+      text: text.trim(),
+      at: at || '',
+      date: typeof date === 'string' ? date.trim() : '',
+      createdVia: 'manual'
+    });
     return res.status(201).json(reminder);
   } catch (err) {
     console.warn('POST reminder failed:', err.message);
@@ -275,6 +246,7 @@ router.patch('/checklist/:id', requireAuth, requireElder, async (req, res) => {
   const { id } = req.params;
   try {
     await toggleChecklistItem(req.auth.userId, id);
+    await setLastActivityAt(req.auth.userId);
     return res.json({ message: 'Updated.' });
   } catch (err) {
     console.warn('PATCH checklist failed:', err.message);
@@ -294,56 +266,32 @@ router.delete('/checklist/:id', requireAuth, requireElder, async (req, res) => {
   }
 });
 
-/** POST /api/ai/optimize-schedule — suggest spread-out medicine times (family or elder) */
-router.post('/optimize-schedule', requireAuth, async (req, res) => {
-  if (!genAI || !GEMINI_API_KEY) {
-    return res.status(503).json({ message: 'Optimize not configured (GEMINI_API_KEY missing).' });
-  }
+/** POST /api/ai/optimize-schedule — fallback (no Gemini); times unchanged */
+router.post('/optimize-schedule', requireAuth, (req, res) => {
   const medicines = req.body && req.body.medicines;
   if (!Array.isArray(medicines) || medicines.length === 0) {
     return res.status(400).json({ message: 'Body must include medicines array with id, name, time.' });
   }
-  try {
-    const list = medicines.map((m) => ({ id: m.id, name: m.name || '', time: m.time || '' })).filter((m) => m.id && m.name);
-    if (list.length === 0) {
-      return res.status(400).json({ message: 'No valid medicines (id and name required).' });
-    }
-    const userContent = `Given these medicines and their current times (or empty), suggest a spread-out schedule for the day. For each medicine output a JSON array of objects: { "id": "<same id>", "name": "<name>", "suggestedTime": "HH:MM" or "8:00 AM" style }. Also provide a short "explanation" string. Current list: ${JSON.stringify(list)}. Output only valid JSON: { "suggestions": [ ... ], "explanation": "..." }.`;
-    const raw = await geminiGenerate('You output only valid JSON with suggestions array and explanation string.', userContent, 400) || '{}';
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    let suggestions = [];
-    let explanation = '';
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]);
-        suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
-        explanation = typeof parsed.explanation === 'string' ? parsed.explanation : '';
-      } catch (_) {}
-    }
-    return res.json({ suggestions, explanation });
-  } catch (err) {
-    console.warn('POST /api/ai/optimize-schedule failed:', err.message);
-    return res.status(500).json({ message: err.message || 'Optimize failed.' });
+  const list = medicines.map((m) => ({ id: m.id, name: m.name || '', time: m.time || '' })).filter((m) => m.id && m.name);
+  if (list.length === 0) {
+    return res.status(400).json({ message: 'No valid medicines (id and name required).' });
   }
+  const suggestions = list.map((m) => ({
+    id: m.id,
+    name: m.name,
+    suggestedTime: m.time || ''
+  }));
+  const explanation = 'Schedule optimization is temporarily unavailable; times unchanged.';
+  return res.json({ suggestions, explanation });
 });
 
-/** POST /api/ai/simplify-text — return simpler wording for elders */
-router.post('/simplify-text', requireAuth, async (req, res) => {
-  if (!genAI || !GEMINI_API_KEY) {
-    return res.status(503).json({ message: 'Simplify not configured (GEMINI_API_KEY missing).' });
-  }
+/** POST /api/ai/simplify-text — passthrough (no Gemini); caller continues to work */
+router.post('/simplify-text', requireAuth, (req, res) => {
   const text = req.body && req.body.text;
   if (typeof text !== 'string' || !text.trim()) {
     return res.status(400).json({ message: 'Body must include text string.' });
   }
-  try {
-    const systemPrompt = 'Rewrite the user message in simpler, clearer language for an older adult. Keep it short. No medical advice.';
-    const simplified = await geminiGenerate(systemPrompt, text.trim(), 150) || text.trim();
-    return res.json({ simplified });
-  } catch (err) {
-    console.warn('POST /api/ai/simplify-text failed:', err.message);
-    return res.status(500).json({ message: err.message || 'Simplify failed.' });
-  }
+  return res.json({ simplified: text.trim() });
 });
 
 module.exports = router;

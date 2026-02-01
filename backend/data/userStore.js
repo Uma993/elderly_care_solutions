@@ -24,9 +24,23 @@ function normalizePhone(phone) {
   return phone.replace(/\D/g, '');
 }
 
+function findById(userId) {
+  const users = readUsers();
+  return users.find((u) => u.id === userId) || null;
+}
+
 function findByEmail(email) {
   const users = readUsers();
   return users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+}
+
+function updatePassword(userId, newPassword) {
+  const users = readUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx < 0) return false;
+  users[idx] = { ...users[idx], password: newPassword };
+  writeUsers(users);
+  return true;
 }
 
 function findByPhone(phone) {
@@ -48,8 +62,10 @@ function createNewUser({ fullName, email, password, role, phone, relation }) {
 module.exports = {
   readUsers,
   writeUsers,
+  findById,
   findByEmail,
   findByPhone,
   normalizePhone,
-  createNewUser
+  createNewUser,
+  updatePassword
 };

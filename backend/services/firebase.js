@@ -83,6 +83,29 @@ function isConfigured() {
 }
 
 /**
+ * Set last activity timestamp on an elder doc (for inactive tracker).
+ * @param {string} elderId
+ */
+async function setLastActivityAt(elderId) {
+  if (!firestore) return;
+  const ref = firestore.collection('users').doc(elderId);
+  await ref.set({ lastActivityAt: new Date().toISOString() }, { merge: true });
+}
+
+/**
+ * Get last activity timestamp for an elder (for family dashboard).
+ * @param {string} elderId
+ * @returns {Promise<string|null>}
+ */
+async function getLastActivityAt(elderId) {
+  if (!firestore) return null;
+  const ref = firestore.collection('users').doc(elderId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : null;
+  return data && data.lastActivityAt ? data.lastActivityAt : null;
+}
+
+/**
  * Get linked elder ids for a family user (from Firestore). Supports linkedElderIds array or legacy linkedElderId.
  * @param {string} familyUserId
  * @returns {Promise<string[]>}
@@ -145,8 +168,79 @@ async function getElderMedicines(elderId) {
     name: m.name || '',
     dosage: m.dosage || '',
     time: m.time || '',
-    notes: m.notes || ''
+    notes: m.notes || '',
+    refillRequestedAt: m.refillRequestedAt || null,
+    refillRequestedBy: m.refillRequestedBy || null,
+    refillStatus: m.refillStatus || 'none',
+    refillNotes: m.refillNotes || '',
+    amountLeft: m.amountLeft != null ? m.amountLeft : null,
+    refillReminderAt: m.refillReminderAt || null
   }));
+}
+
+/**
+ * Set refill request on a medicine (family requested refill).
+ * @param {string} elderId
+ * @param {string} medicineId
+ * @param {{ requestedBy: string, notes?: string, amountLeft?: number, refillReminderDays?: number }}
+ */
+async function setMedicineRefillRequest(elderId, medicineId, { requestedBy, notes, amountLeft, refillReminderDays }) {
+  if (!firestore) throw new Error('Firestore not configured');
+  const rawRef = firestore.collection('users').doc(elderId);
+  const snap = await rawRef.get();
+  const data = snap.exists ? snap.data() : {};
+  const arr = Array.isArray(data.medicines) ? data.medicines : [];
+  const idx = arr.findIndex((m) => m.id === medicineId);
+  if (idx === -1) throw new Error('Medicine not found');
+  const now = new Date().toISOString();
+  let refillReminderAt = null;
+  if (refillReminderDays != null && Number(refillReminderDays) > 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + Number(refillReminderDays));
+    refillReminderAt = d.toISOString().slice(0, 10);
+  }
+  arr[idx] = {
+    ...arr[idx],
+    refillRequestedAt: now,
+    refillRequestedBy: requestedBy || '',
+    refillStatus: 'pending',
+    refillNotes: notes != null ? String(notes).trim() : (arr[idx].refillNotes || ''),
+    amountLeft: amountLeft != null ? (typeof amountLeft === 'number' ? amountLeft : Number(amountLeft)) : arr[idx].amountLeft,
+    refillReminderAt: refillReminderAt || arr[idx].refillReminderAt || null
+  };
+  await rawRef.set({ medicines: arr }, { merge: true });
+}
+
+/**
+ * Update refill status and/or amount/reminder on a medicine.
+ * @param {string} elderId
+ * @param {string} medicineId
+ * @param {{ status?: 'pending'|'ordered'|'received', notes?: string, amountLeft?: number, refillReminderAt?: string, refillReminderDays?: number }}
+ */
+async function updateMedicineRefillStatus(elderId, medicineId, { status, notes, amountLeft, refillReminderAt, refillReminderDays }) {
+  if (!firestore) throw new Error('Firestore not configured');
+  const rawRef = firestore.collection('users').doc(elderId);
+  const snap = await rawRef.get();
+  const data = snap.exists ? snap.data() : {};
+  const arr = Array.isArray(data.medicines) ? data.medicines : [];
+  const idx = arr.findIndex((m) => m.id === medicineId);
+  if (idx === -1) throw new Error('Medicine not found');
+  let nextRefillReminderAt = arr[idx].refillReminderAt || null;
+  if (refillReminderAt != null && String(refillReminderAt).trim()) {
+    nextRefillReminderAt = String(refillReminderAt).trim().slice(0, 10);
+  } else if (refillReminderDays != null && Number(refillReminderDays) > 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + Number(refillReminderDays));
+    nextRefillReminderAt = d.toISOString().slice(0, 10);
+  }
+  arr[idx] = {
+    ...arr[idx],
+    refillStatus: status === 'pending' || status === 'ordered' || status === 'received' ? status : arr[idx].refillStatus,
+    refillNotes: notes != null ? String(notes).trim() : (arr[idx].refillNotes || ''),
+    amountLeft: amountLeft !== undefined ? (typeof amountLeft === 'number' ? amountLeft : amountLeft == null ? null : Number(amountLeft)) : arr[idx].amountLeft,
+    refillReminderAt: nextRefillReminderAt
+  };
+  await rawRef.set({ medicines: arr }, { merge: true });
 }
 
 /**
@@ -186,7 +280,7 @@ async function appendMedicineIntakeLog(elderId, entry) {
 /**
  * Get tasks array from elder doc. Returns [] if missing.
  * @param {string} elderId
- * @returns {Promise<Array<{id,title,description,time,completed,completedAt}>>}
+ * @returns {Promise<Array<{id,title,description,time,date,completed,completedAt}>>}
  */
 async function getElderTasks(elderId) {
   if (!firestore) return [];
@@ -199,6 +293,7 @@ async function getElderTasks(elderId) {
     title: t.title || '',
     description: t.description || '',
     time: t.time || '',
+    date: t.date || '',
     completed: !!t.completed,
     completedAt: t.completedAt || null
   }));
@@ -262,7 +357,7 @@ async function appendSosAlert(elderId, options = {}) {
 /**
  * Get reminders array from user doc. Returns [] if missing.
  * @param {string} userId
- * @returns {Promise<Array<{id,text,at,done,createdVia}>>}
+ * @returns {Promise<Array<{id,text,at,date,done,createdVia}>>}
  */
 async function getReminders(userId) {
   if (!firestore) return [];
@@ -274,6 +369,7 @@ async function getReminders(userId) {
     id: r.id,
     text: r.text || '',
     at: r.at || '',
+    date: r.date || '',
     done: !!r.done,
     createdVia: r.createdVia || 'manual'
   }));
@@ -282,8 +378,8 @@ async function getReminders(userId) {
 /**
  * Add a reminder to user doc.
  * @param {string} userId
- * @param {{ text: string, at: string }} payload - at is ISO time or "HH:MM"
- * @returns {Promise<{id,text,at,done,createdVia}>}
+ * @param {{ text: string, at: string, date?: string }} payload - at is ISO time or "HH:MM"; date is optional YYYY-MM-DD
+ * @returns {Promise<{id,text,at,date,done,createdVia}>}
  */
 async function addReminder(userId, payload) {
   if (!firestore) throw new Error('Firestore not configured');
@@ -296,6 +392,7 @@ async function addReminder(userId, payload) {
     id,
     text: payload.text || '',
     at: payload.at || '',
+    date: payload.date || '',
     done: false,
     createdVia: payload.createdVia || 'manual'
   };
@@ -394,6 +491,88 @@ async function deleteChecklistItem(userId, itemId) {
   await ref.set({ checklist: filtered }, { merge: true });
 }
 
+/**
+ * Add or overwrite wellbeing entry for a user for a given date (one per day).
+ * Uses subcollection users/{userId}/wellbeingLog with document id = date (YYYY-MM-DD).
+ * @param {string} userId
+ * @param {{ date: string, value: 'good'|'okay'|'not_well' }} payload
+ */
+async function addWellbeingEntry(userId, payload) {
+  if (!firestore) throw new Error('Firestore not configured');
+  const date = (payload.date || '').slice(0, 10);
+  const value = payload.value === 'good' || payload.value === 'okay' || payload.value === 'not_well' ? payload.value : 'okay';
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Invalid date for wellbeing entry');
+  const ref = firestore.collection('users').doc(userId).collection('wellbeingLog').doc(date);
+  await ref.set({
+    date,
+    value,
+    createdAt: admin?.firestore?.FieldValue?.serverTimestamp?.() || new Date().toISOString()
+  });
+}
+
+/**
+ * Get wellbeing entries for a user, e.g. last N days.
+ * @param {string} userId
+ * @param {{ days?: number }} options - default days 7
+ * @returns {Promise<Array<{date,value,createdAt}>>}
+ */
+async function getWellbeingEntries(userId, options = {}) {
+  if (!firestore) return [];
+  const days = Math.min(Math.max(options.days || 7, 1), 365);
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+  const startStr = start.toISOString().slice(0, 10);
+  const endStr = end.toISOString().slice(0, 10);
+  const ref = firestore.collection('users').doc(userId).collection('wellbeingLog');
+  const snap = await ref.where('date', '>=', startStr).where('date', '<=', endStr).get();
+  return snap.docs.map((d) => {
+    const data = d.data();
+    return { date: data.date, value: data.value || 'okay', createdAt: data.createdAt };
+  });
+}
+
+/**
+ * Get routine summary (time-series) for an elder: medicine adherence, task completion, wellbeing per day.
+ * @param {string} elderId
+ * @param {string} fromDate - YYYY-MM-DD
+ * @param {string} toDate - YYYY-MM-DD
+ * @returns {Promise<Array<{date,medicineAdherence,taskCompletion,wellbeingDone,compositeScore}>>}
+ */
+async function getRoutineSummary(elderId, fromDate, toDate) {
+  if (!firestore) return [];
+  const ref = firestore.collection('users').doc(elderId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : {};
+  const medicines = Array.isArray(data.medicines) ? data.medicines : [];
+  const medicineIntakeLogs = Array.isArray(data.medicineIntakeLogs) ? data.medicineIntakeLogs : [];
+  const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+  const wellbeingRef = firestore.collection('users').doc(elderId).collection('wellbeingLog');
+  const wellbeingSnap = await wellbeingRef.where('date', '>=', fromDate).where('date', '<=', toDate).get();
+  const wellbeingDates = new Set(wellbeingSnap.docs.map((d) => d.data().date).filter(Boolean));
+  const fromD = new Date(fromDate + 'T12:00:00');
+  const toD = new Date(toDate + 'T12:00:00');
+  const result = [];
+  for (let d = new Date(fromD); d <= toD; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().slice(0, 10);
+    let expectedDoses = 0;
+    medicines.forEach((m) => {
+      const times = Array.isArray(m.times) ? m.times : (m.time ? [m.time] : []);
+      expectedDoses += times.length || 1;
+    });
+    const takenCount = medicineIntakeLogs.filter((log) => log.date === dateStr).length;
+    const medicineAdherence = expectedDoses === 0 ? 100 : Math.min(100, Math.round((takenCount / expectedDoses) * 100));
+    const dayTasks = tasks.filter((t) => (t.date || '').slice(0, 10) === dateStr);
+    const totalTasks = dayTasks.length;
+    const completedTasks = dayTasks.filter((t) => !!t.completed).length;
+    const taskCompletion = totalTasks === 0 ? 100 : Math.min(100, Math.round((completedTasks / totalTasks) * 100));
+    const wellbeingDone = wellbeingDates.has(dateStr) ? 1 : 0;
+    const compositeScore = Math.round((medicineAdherence + taskCompletion) / 2);
+    result.push({ date: dateStr, medicineAdherence, taskCompletion, wellbeingDone, compositeScore });
+  }
+  return result;
+}
+
 module.exports = {
   createUserProfile,
   createCustomToken,
@@ -403,6 +582,8 @@ module.exports = {
   getElderName,
   getElderMedicines,
   setElderMedicines,
+  setMedicineRefillRequest,
+  updateMedicineRefillStatus,
   appendMedicineIntakeLog,
   getElderTasks,
   setElderTasks,
@@ -415,6 +596,11 @@ module.exports = {
   addChecklistItem,
   toggleChecklistItem,
   deleteChecklistItem,
+  addWellbeingEntry,
+  getWellbeingEntries,
+  setLastActivityAt,
+  getLastActivityAt,
+  getRoutineSummary,
   isConfigured,
   get firestore() {
     return firestore;
