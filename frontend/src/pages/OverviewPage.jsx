@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import Button from '../components/ui/Button.jsx';
 import Tag from '../components/ui/Tag.jsx';
+import AddElderProfileModal from '../components/AddElderProfileModal.jsx';
 import { colors } from '../design/tokens';
 import { API_BASE_URL, getAuthHeaders } from '../api';
 import { useFamilyElder } from '../context/FamilyElderContext.jsx';
@@ -35,6 +36,7 @@ function OverviewPage() {
   const { currentUser, token } = useOutletContext();
   const { elders, selectedElderId, setSelectedElderId, loadError, setRefreshTrigger } = useFamilyElder() || {};
   const [linkElderPhone, setLinkElderPhone] = useState('');
+  const [showAddElderModal, setShowAddElderModal] = useState(false);
   const linkAction = useActionState({ autoResetMs: 4000 });
 
   const handleLinkToElder = async () => {
@@ -92,24 +94,26 @@ function OverviewPage() {
       {(elders || []).length > 1 && (
         <div style={{ marginBottom: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
           {(elders || []).map((e) => (
-            <button
-              key={e.id}
-              type="button"
-              className="interactive-surface"
-              onClick={() => setSelectedElderId?.(e.id)}
-              style={{
-                padding: '0.5rem 1rem',
-                borderRadius: '999px',
-                border: `2px solid ${selectedElderId === e.id ? colors.primary : colors.borderSubtle}`,
-                background: selectedElderId === e.id ? colors.surfaceSoft : 'transparent',
-                color: colors.text,
-                fontWeight: selectedElderId === e.id ? 600 : 400,
-                cursor: 'pointer',
-                fontSize: '1rem'
-              }}
-            >
-              {e.name || 'Elder'}
-            </button>
+            <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                type="button"
+                className="interactive-surface"
+                onClick={() => setSelectedElderId?.(e.id)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '999px',
+                  border: `2px solid ${selectedElderId === e.id ? colors.primary : colors.borderSubtle}`,
+                  background: selectedElderId === e.id ? colors.surfaceSoft : 'transparent',
+                  color: colors.text,
+                  fontWeight: selectedElderId === e.id ? 600 : 400,
+                  cursor: 'pointer',
+                  fontSize: '1rem'
+                }}
+              >
+                {e.name || 'Elder'}
+              </button>
+              {e.hasProfileAdded ? <Tag tone="success">Profile added</Tag> : <span style={{ fontSize: '0.85rem', color: colors.textMuted }}>Profile pending</span>}
+            </div>
           ))}
         </div>
       )}
@@ -129,8 +133,12 @@ function OverviewPage() {
       >
         {(elders || []).length === 0 ? (
           <>
-            <p style={{ color: colors.textMuted, margin: 0 }}>No elder linked. Enter the elder&apos;s phone number below to link.</p>
+            <p style={{ color: colors.textMuted, margin: 0 }}>No elder linked. Add an elder profile or link to one who already has an account.</p>
             <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <Button onClick={() => setShowAddElderModal(true)} style={{ alignSelf: 'flex-start', marginTop: 0 }}>
+                Add elder profile
+              </Button>
+              <p style={{ color: colors.textMuted, margin: '0.5rem 0 0.25rem 0', fontSize: '0.95rem' }}>Or link by phone (elder has an account):</p>
               <input
                 type="tel"
                 placeholder="Elder's phone number"
@@ -152,9 +160,12 @@ function OverviewPage() {
           </>
         ) : (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
               <span style={{ fontWeight: 600 }}>{selectedElder?.name || 'Elder'}</span>
-              {allSosAlerts.length > 0 ? <Tag tone="warning">SOS alert(s)</Tag> : <Tag tone="success">No active SOS</Tag>}
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {selectedElder?.hasProfileAdded ? <Tag tone="success">Profile added</Tag> : <Tag>Profile pending</Tag>}
+                {allSosAlerts.length > 0 ? <Tag tone="warning">SOS alert(s)</Tag> : <Tag tone="success">No active SOS</Tag>}
+              </div>
             </div>
             {selectedElder?.lastActivityAt != null && (
               <span style={{ fontSize: '0.95rem', color: colors.textMuted }}>
@@ -175,8 +186,12 @@ function OverviewPage() {
               <span style={{ fontSize: '0.95rem', opacity: 0.9 }}>Condition: {selectedElder.primaryCondition}</span>
             )}
             <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: `1px solid ${colors.borderSubtle}` }}>
-              <p style={{ color: colors.textMuted, margin: '0 0 0.5rem 0', fontSize: '0.95rem' }}>Link another elder</p>
+              <p style={{ color: colors.textMuted, margin: '0 0 0.5rem 0', fontSize: '0.95rem' }}>Add or link another elder</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <Button onClick={() => setShowAddElderModal(true)} style={{ alignSelf: 'flex-start', marginTop: 0 }}>
+                  Add elder profile
+                </Button>
+                <span style={{ color: colors.textMuted, fontSize: '0.9rem' }}>Or link by phone:</span>
                 <input
                   type="tel"
                   placeholder="Elder's phone number"
@@ -199,6 +214,12 @@ function OverviewPage() {
           </>
         )}
       </div>
+      <AddElderProfileModal
+        open={showAddElderModal}
+        onClose={() => setShowAddElderModal(false)}
+        onSuccess={() => setRefreshTrigger?.((t) => t + 1)}
+        token={token}
+      />
     </div>
   );
 }

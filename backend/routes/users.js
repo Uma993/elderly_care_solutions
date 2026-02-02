@@ -1,8 +1,25 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('./auth');
-const { linkElderToFamily, isConfigured } = require('../services/firebase');
+const { linkElderToFamily, createElderProfile, getLinkedElders, isConfigured } = require('../services/firebase');
 const { findByPhone } = require('../data/userStore');
+
+// GET /api/users/me/elders — family only; returns linked elders (for mobile REST client)
+router.get('/me/elders', requireAuth, async (req, res) => {
+  if (req.auth.role !== 'family') {
+    return res.status(403).json({ message: 'Only family members can list linked elders.' });
+  }
+  if (!isConfigured()) {
+    return res.status(503).json({ message: 'Firestore not configured.' });
+  }
+  try {
+    const elders = await getLinkedElders(req.auth.userId);
+    return res.json({ elders });
+  } catch (err) {
+    console.warn('get me/elders failed:', err.message);
+    return res.status(500).json({ message: err.message || 'Failed to load elders.' });
+  }
+});
 
 // POST /api/users/link-elder — family links to elder by phone (no IDs shown to user)
 router.post('/link-elder', requireAuth, async (req, res) => {
@@ -36,6 +53,41 @@ router.post('/link-elder', requireAuth, async (req, res) => {
   } catch (err) {
     console.warn('link-elder failed:', err.message);
     return res.status(500).json({ message: err.message || 'Failed to link to elder.' });
+  }
+});
+
+// POST /api/users/add-elder-profile — family creates an elder profile (elder may not have an account)
+router.post('/add-elder-profile', requireAuth, async (req, res) => {
+  if (req.auth.role !== 'family') {
+    return res.status(403).json({ message: 'Only family members can add elder profiles.' });
+  }
+  const { name, phone, age, gender, location, primaryCondition } = req.body || {};
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ message: 'Name is required.' });
+  }
+  if (!phone || typeof phone !== 'string' || !phone.trim()) {
+    return res.status(400).json({ message: 'Phone is required.' });
+  }
+  if (!isConfigured()) {
+    return res.status(503).json({ message: 'Firestore not configured.' });
+  }
+  try {
+    const { elderId, elderName } = await createElderProfile(req.auth.userId, {
+      name: name.trim(),
+      phone: phone.trim(),
+      age,
+      gender,
+      location,
+      primaryCondition
+    });
+    return res.json({
+      elderId,
+      elderName,
+      message: 'Elder profile added successfully.'
+    });
+  } catch (err) {
+    console.warn('add-elder-profile failed:', err.message);
+    return res.status(500).json({ message: err.message || 'Failed to add elder profile.' });
   }
 });
 

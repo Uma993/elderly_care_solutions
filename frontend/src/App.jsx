@@ -22,9 +22,11 @@ import VoiceAssistantPage from './pages/VoiceAssistantPage.jsx';
 import SosPage from './pages/SosPage.jsx';
 import RoutinePage from './pages/RoutinePage.jsx';
 import ElderOverviewPage from './pages/ElderOverviewPage.jsx';
+import ElderProfilePage from './pages/ElderProfilePage.jsx';
 import CalendarPage from './pages/CalendarPage.jsx';
 import TimelinePage from './pages/TimelinePage.jsx';
 import InactivityPage from './pages/InactivityPage.jsx';
+import WeatherPage from './pages/WeatherPage.jsx';
 
 function MainView() {
   const location = useLocation();
@@ -33,6 +35,7 @@ function MainView() {
   const [currentUser, setCurrentUser] = useState(null);
   const [token, setToken] = useState(null);
   const [authMessage, setAuthMessage] = useState('');
+  const [showAddElderModal, setShowAddElderModal] = useState(false);
 
   useEffect(() => {
     if (location.search.includes('from=reminder')) {
@@ -57,9 +60,14 @@ function MainView() {
     setActiveTab('login');
   };
 
-  const handleRegistered = (message) => {
-    setAuthMessage(message || 'Registration successful. You can now log in.');
-    setActiveTab('login');
+  const handleRegistered = (data) => {
+    if (data?.user?.role === 'family') {
+      handleLoginSuccess(data.user, data.message, data.token);
+      setShowAddElderModal(true);
+    } else {
+      setAuthMessage(data?.message || 'Registration successful. You can now log in.');
+      setActiveTab('login');
+    }
   };
 
   const shellClass = currentUser ? 'app-shell app-shell--dashboard' : 'app-shell app-shell--auth';
@@ -82,7 +90,13 @@ function MainView() {
           <PageShell title="Elderly Care" subtitle={subtitle} actions={actions}>
             <div className="card-warm-blobs">
               <Card style={{ maxWidth: 'none' }}>
-                <DashboardLayout currentUser={currentUser} token={token} onLogout={handleLogout}>
+                <DashboardLayout
+                  currentUser={currentUser}
+                  token={token}
+                  onLogout={handleLogout}
+                  showAddElderModal={showAddElderModal}
+                  setShowAddElderModal={setShowAddElderModal}
+                >
                   <Outlet context={outletContext} />
                 </DashboardLayout>
               </Card>
@@ -159,9 +173,11 @@ function App() {
         <Route path="inactivity" element={<InactivityPage />} />
         <Route path="overview" element={<OverviewPage />} />
         <Route path="home" element={<ElderOverviewPage />} />
+        <Route path="profile" element={<ElderProfilePage />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="timeline" element={<TimelinePage />} />
         <Route path="routine" element={<RoutinePage />} />
+        <Route path="weather" element={<WeatherPage />} />
       </Route>
     </Routes>
   );

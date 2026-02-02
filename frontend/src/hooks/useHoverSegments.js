@@ -25,11 +25,13 @@ export function useHoverSegments() {
 /** Tooltip copy per segment (elder) */
 export const ELDER_SEGMENT_TOOLTIPS = {
   overview: 'Home overview – voice, wellbeing, reminders',
+  profile: 'View and edit your health profile',
   tasks: 'View today\'s tasks and timeline',
   medicines: 'View medication reminders',
   routine: 'View routine summary and trends',
   calendar: 'View calendar and daily timeline',
   timeline: 'View day strip and timeline',
+  weather: 'Check today\'s weather and walking tips',
   voice: 'Request help with voice',
   sos: 'SOS Emergency – get help fast'
 };

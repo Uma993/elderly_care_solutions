@@ -78,8 +78,191 @@ async function linkElderToFamily(sonUserId, elderUserId) {
   await batch.commit();
 }
 
+/**
+ * Create an elder profile (family-created, elder may not have an account).
+ * Creates users/{elderId} in Firestore and links to family via linkedElderIds / linkedFamilyIds.
+ * @param {string} familyUserId - Node userId of the family member
+ * @param {{ name: string, phone: string, age?: number, location?: string, primaryCondition?: string }} profile
+ * @returns {Promise<{ elderId: string, elderName: string }>}
+ */
+async function createElderProfile(familyUserId, profile) {
+  if (!firestore || !admin) throw new Error('Firestore not configured');
+  const crypto = require('crypto');
+  const name = (profile.name || '').trim();
+  const phone = (profile.phone || '').trim();
+  if (!name || !phone) throw new Error('Name and phone are required.');
+
+  const elderId = crypto.randomUUID();
+  const elderRef = firestore.collection('users').doc(elderId);
+  const familyRef = firestore.collection('users').doc(familyUserId);
+
+  const elderDoc = {
+    id: elderId,
+    fullName: name,
+    name,
+    phone,
+    role: 'elderly',
+    isProfileOnly: true,
+    createdBy: familyUserId,
+    linkedFamilyIds: [familyUserId],
+    medicines: [],
+    tasks: [],
+    medicineIntakeLogs: [],
+    sosAlerts: [],
+    createdAt: admin.firestore.FieldValue.serverTimestamp()
+  };
+  if (profile.age != null && profile.age !== '') elderDoc.age = Number(profile.age);
+  if (profile.gender != null && profile.gender !== '') elderDoc.gender = String(profile.gender).trim();
+  if (profile.location != null && profile.location !== '') elderDoc.location = String(profile.location).trim();
+  if (profile.primaryCondition != null && profile.primaryCondition !== '') elderDoc.primaryCondition = String(profile.primaryCondition).trim();
+
+  const batch = firestore.batch();
+  batch.set(elderRef, elderDoc);
+  batch.update(familyRef, {
+    linkedElderIds: admin.firestore.FieldValue.arrayUnion(elderId),
+    linkedElderId: elderId
+  });
+  await batch.commit();
+  return { elderId, elderName: name };
+}
+
 function isConfigured() {
   return !!firestore && !!auth;
+}
+
+const PROFILE_KEYS = [
+  'age', 'gender', 'height', 'heightUnit', 'weight', 'weightUnit', 'bloodType',
+  'location', 'primaryCondition',
+  'emergencyContact1', 'emergencyContact2', 'primaryDoctor', 'preferredHospital',
+  'allergies', 'dietaryRestrictions', 'mobilityAids',
+  'cognitiveNotes',
+  'stepsToday', 'heartRate', 'spO2', 'bloodPressure', 'sleepHours'
+];
+
+function isNonEmpty(val) {
+  if (val == null) return false;
+  if (typeof val === 'object') return Object.keys(val).some((k) => isNonEmpty(val[k]));
+  return String(val).trim() !== '';
+}
+
+/**
+ * Get elder profile fields and hasProfileAdded status.
+ * @param {string} elderId
+ * @returns {Promise<{ hasProfileAdded: boolean, profile: object }>}
+ */
+async function getElderProfile(elderId) {
+  if (!firestore) return { hasProfileAdded: false, profile: {} };
+  const ref = firestore.collection('users').doc(elderId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : {};
+  const profile = {};
+  for (const k of PROFILE_KEYS) {
+    if (data[k] !== undefined) profile[k] = data[k];
+  }
+  const hasProfileAdded = !!(
+    isNonEmpty(data.age) || isNonEmpty(data.gender) || isNonEmpty(data.height) ||
+    isNonEmpty(data.weight) || isNonEmpty(data.bloodType) ||
+    isNonEmpty(data.emergencyContact1) || isNonEmpty(data.allergies) ||
+    isNonEmpty(data.primaryDoctor)
+  );
+  return { hasProfileAdded, profile };
+}
+
+/**
+ * Update elder profile fields (merge into existing doc).
+ * @param {string} elderId
+ * @param {object} data - Profile fields to update (all optional)
+ */
+async function updateElderProfile(elderId, data) {
+  if (!firestore) throw new Error('Firestore not configured');
+  const ref = firestore.collection('users').doc(elderId);
+  const update = {};
+  const validGenders = ['male', 'female', 'other'];
+  const validBloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+  const validMobility = ['none', 'walker', 'wheelchair', 'cane', 'other'];
+  for (const k of PROFILE_KEYS) {
+    if (data[k] === undefined) continue;
+    let v = data[k];
+    if (k === 'age') { update[k] = (v === '' || v == null) ? null : Number(v); continue; }
+    if (k === 'gender' && v) { update[k] = validGenders.includes(String(v).toLowerCase()) ? String(v).toLowerCase() : String(v).trim(); continue; }
+    if (k === 'bloodType' && v) { update[k] = validBloodTypes.includes(String(v)) ? String(v) : String(v).trim(); continue; }
+    if (k === 'mobilityAids' && v) { update[k] = validMobility.includes(String(v).toLowerCase()) ? String(v).toLowerCase() : String(v).trim(); continue; }
+    if (k === 'height' || k === 'weight') { update[k] = v === '' || v == null ? null : (typeof v === 'number' ? v : Number(v)); continue; }
+    if (['stepsToday', 'heartRate', 'spO2', 'sleepHours'].includes(k)) { update[k] = v === '' || v == null ? null : (typeof v === 'number' ? v : Number(v)); continue; }
+    if (typeof v === 'string') v = v.trim();
+    if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+      const obj = {};
+      for (const pk of ['name', 'relationship', 'phone']) {
+        if (v[pk] !== undefined) obj[pk] = String(v[pk]).trim();
+      }
+      update[k] = obj;
+    } else {
+      update[k] = v;
+    }
+  }
+  await ref.set(update, { merge: true });
+}
+
+/**
+ * Get Fitbit tokens for an elder. Returns null if not connected.
+ * @param {string} elderId
+ * @returns {Promise<{ accessToken: string, refreshToken: string, fitbitUserId?: string, lastSyncAt?: string } | null>}
+ */
+async function getFitbitTokens(elderId) {
+  if (!firestore) return null;
+  const ref = firestore.collection('users').doc(elderId);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() : {};
+  if (!data.fitbitAccessToken || !data.fitbitRefreshToken) return null;
+  return {
+    accessToken: data.fitbitAccessToken,
+    refreshToken: data.fitbitRefreshToken,
+    fitbitUserId: data.fitbitUserId || undefined,
+    lastSyncAt: data.fitbitLastSyncAt || undefined
+  };
+}
+
+/**
+ * Store Fitbit tokens for an elder.
+ * @param {string} elderId
+ * @param {{ accessToken: string, refreshToken: string, fitbitUserId?: string }}
+ */
+async function setFitbitTokens(elderId, { accessToken, refreshToken, fitbitUserId }) {
+  if (!firestore) throw new Error('Firestore not configured');
+  const ref = firestore.collection('users').doc(elderId);
+  const update = {
+    fitbitAccessToken: accessToken,
+    fitbitRefreshToken: refreshToken,
+    fitbitConnectedAt: new Date().toISOString()
+  };
+  if (fitbitUserId) update.fitbitUserId = fitbitUserId;
+  await ref.set(update, { merge: true });
+}
+
+/**
+ * Clear Fitbit tokens for an elder.
+ * @param {string} elderId
+ */
+async function clearFitbitTokens(elderId) {
+  if (!firestore || !admin) throw new Error('Firestore not configured');
+  const ref = firestore.collection('users').doc(elderId);
+  await ref.update({
+    fitbitAccessToken: admin.firestore.FieldValue.delete(),
+    fitbitRefreshToken: admin.firestore.FieldValue.delete(),
+    fitbitUserId: admin.firestore.FieldValue.delete(),
+    fitbitConnectedAt: admin.firestore.FieldValue.delete(),
+    fitbitLastSyncAt: admin.firestore.FieldValue.delete()
+  });
+}
+
+/**
+ * Set Fitbit last sync timestamp.
+ * @param {string} elderId
+ */
+async function setFitbitLastSyncAt(elderId) {
+  if (!firestore) return;
+  const ref = firestore.collection('users').doc(elderId);
+  await ref.set({ fitbitLastSyncAt: new Date().toISOString() }, { merge: true });
 }
 
 /**
@@ -123,6 +306,57 @@ async function getLinkedElderIds(familyUserId) {
     return [data.linkedElderId.trim()];
   }
   return [];
+}
+
+/**
+ * Get linked elders for a family user (for mobile REST API). Same shape as dashboardData elders array.
+ * @param {string} familyUserId
+ * @returns {Promise<Array<{id,name,age,gender,location,primaryCondition,bloodType,emergencyContact1,emergencyContact2,primaryDoctor,preferredHospital,allergies,dietaryRestrictions,mobilityAids,hasProfileAdded,lastActivityAt,healthUpdates,updates,medicineIntakeLogs,tasks,sosAlerts}>>}
+ */
+async function getLinkedElders(familyUserId) {
+  if (!firestore) return [];
+  const elderIds = await getLinkedElderIds(familyUserId);
+  const elders = [];
+  for (const elderId of elderIds) {
+    const ref = firestore.collection('users').doc(elderId);
+    const snap = await ref.get();
+    const elderData = snap.exists ? snap.data() : null;
+    if (!elderData) continue;
+    const ec1 = elderData.emergencyContact1;
+    const pd = elderData.primaryDoctor;
+    const hasProfileAdded = !!(
+      (elderData.age != null && elderData.age !== '') ||
+      (elderData.gender && String(elderData.gender).trim()) ||
+      (elderData.bloodType && String(elderData.bloodType).trim()) ||
+      (ec1 && ec1.name && String(ec1.name).trim()) ||
+      (elderData.allergies && String(elderData.allergies).trim()) ||
+      (pd && pd.name && String(pd.name).trim())
+    );
+    elders.push({
+      id: elderId,
+      name: elderData.fullName || elderData.name || '',
+      age: elderData.age,
+      gender: elderData.gender,
+      location: elderData.location,
+      primaryCondition: elderData.primaryCondition,
+      bloodType: elderData.bloodType,
+      emergencyContact1: elderData.emergencyContact1,
+      emergencyContact2: elderData.emergencyContact2,
+      primaryDoctor: elderData.primaryDoctor,
+      preferredHospital: elderData.preferredHospital,
+      allergies: elderData.allergies,
+      dietaryRestrictions: elderData.dietaryRestrictions,
+      mobilityAids: elderData.mobilityAids,
+      hasProfileAdded,
+      lastActivityAt: elderData.lastActivityAt || null,
+      healthUpdates: Array.isArray(elderData.healthUpdates) ? elderData.healthUpdates : [],
+      updates: Array.isArray(elderData.updates) ? elderData.updates : [],
+      medicineIntakeLogs: Array.isArray(elderData.medicineIntakeLogs) ? elderData.medicineIntakeLogs : [],
+      tasks: Array.isArray(elderData.tasks) ? elderData.tasks : [],
+      sosAlerts: Array.isArray(elderData.sosAlerts) ? elderData.sosAlerts : []
+    });
+  }
+  return elders;
 }
 
 /**
@@ -577,7 +811,11 @@ module.exports = {
   createUserProfile,
   createCustomToken,
   linkElderToFamily,
+  createElderProfile,
+  getElderProfile,
+  updateElderProfile,
   getLinkedElderIds,
+  getLinkedElders,
   getLinkedFamilyIds,
   getElderName,
   getElderMedicines,
@@ -601,6 +839,10 @@ module.exports = {
   setLastActivityAt,
   getLastActivityAt,
   getRoutineSummary,
+  getFitbitTokens,
+  setFitbitTokens,
+  clearFitbitTokens,
+  setFitbitLastSyncAt,
   isConfigured,
   get firestore() {
     return firestore;

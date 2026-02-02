@@ -7,6 +7,8 @@ const {
   getLinkedElderIds,
   getLinkedFamilyIds,
   getElderName,
+  getElderProfile,
+  updateElderProfile,
   getElderMedicines,
   setElderMedicines,
   setMedicineRefillRequest,
@@ -55,6 +57,45 @@ function requireElderSelf(req, res, next) {
   }
   next();
 }
+
+/** Helper: elder (self) or family (linked) can access */
+async function requireElderOrFamilyLinked(req, res, next) {
+  const elderId = req.params.elderId;
+  if (!elderId) return res.status(400).json({ message: 'Elder ID is required.' });
+  if (req.auth.role === 'elderly') {
+    if (req.auth.userId !== elderId) return res.status(403).json({ message: 'You can only access your own profile.' });
+  } else if (req.auth.role === 'family') {
+    if (!isConfigured()) return res.status(503).json({ message: 'Firestore not configured.' });
+    const linkedIds = await getLinkedElderIds(req.auth.userId);
+    if (!linkedIds.includes(elderId)) return res.status(403).json({ message: 'You are not linked to this elder.' });
+  } else {
+    return res.status(403).json({ message: 'Access denied.' });
+  }
+  next();
+}
+
+/** GET /api/elders/:elderId/profile — elder (self) or family (linked) */
+router.get('/:elderId/profile', requireAuth, requireElderOrFamilyLinked, async (req, res) => {
+  try {
+    const { hasProfileAdded, profile } = await getElderProfile(req.params.elderId);
+    return res.json({ hasProfileAdded, profile });
+  } catch (err) {
+    console.warn('GET profile failed:', err.message);
+    return res.status(500).json({ message: err.message || 'Failed to load profile.' });
+  }
+});
+
+/** PATCH /api/elders/:elderId/profile — elder (self) or family (linked) */
+router.patch('/:elderId/profile', requireAuth, requireElderOrFamilyLinked, async (req, res) => {
+  try {
+    await updateElderProfile(req.params.elderId, req.body || {});
+    const { hasProfileAdded, profile } = await getElderProfile(req.params.elderId);
+    return res.json({ message: 'Profile updated.', hasProfileAdded, profile });
+  } catch (err) {
+    console.warn('PATCH profile failed:', err.message);
+    return res.status(500).json({ message: err.message || 'Failed to update profile.' });
+  }
+});
 
 /** GET /api/elders/:elderId/medicines — family (linked) or elder (self) */
 router.get('/:elderId/medicines', requireAuth, async (req, res) => {

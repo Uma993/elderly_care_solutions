@@ -82,12 +82,32 @@ export async function getFamilyDashboardData(userId, token) {
     const elderSnap = await getDoc(elderRef);
     const elderData = elderSnap.exists() ? elderSnap.data() : null;
     if (!elderData) continue;
+    const ec1 = elderData.emergencyContact1;
+    const pd = elderData.primaryDoctor;
+    const hasProfileAdded = !!(
+      (elderData.age != null && elderData.age !== '') ||
+      (elderData.gender && String(elderData.gender).trim()) ||
+      (elderData.bloodType && String(elderData.bloodType).trim()) ||
+      (ec1 && ec1.name && String(ec1.name).trim()) ||
+      (elderData.allergies && String(elderData.allergies).trim()) ||
+      (pd && pd.name && String(pd.name).trim())
+    );
     elders.push({
       id: elderId,
       name: elderData.fullName || elderData.name || '',
       age: elderData.age,
+      gender: elderData.gender,
       location: elderData.location,
       primaryCondition: elderData.primaryCondition,
+      bloodType: elderData.bloodType,
+      emergencyContact1: elderData.emergencyContact1,
+      emergencyContact2: elderData.emergencyContact2,
+      primaryDoctor: elderData.primaryDoctor,
+      preferredHospital: elderData.preferredHospital,
+      allergies: elderData.allergies,
+      dietaryRestrictions: elderData.dietaryRestrictions,
+      mobilityAids: elderData.mobilityAids,
+      hasProfileAdded,
       lastActivityAt: elderData.lastActivityAt || null,
       healthUpdates: Array.isArray(elderData.healthUpdates) ? elderData.healthUpdates : [],
       updates: Array.isArray(elderData.updates) ? elderData.updates : [],

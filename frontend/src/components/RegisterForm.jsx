@@ -62,7 +62,7 @@ function RegisterForm({ apiBaseUrl, onRegistered }) {
       if (!response.ok) {
         setError(data.message || 'Registration failed. Please try again.');
       } else {
-        onRegistered?.(data.message);
+        onRegistered?.(data);
         // Clear the form a bit
         setPassword('');
         setConfirmPassword('');
