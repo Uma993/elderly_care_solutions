@@ -55,7 +55,7 @@ function PageShell({ title, subtitle, children, actions, isAuthPage, authNavLabe
     textTransform: isAuthPage ? 'none' : 'uppercase',
     marginBottom: spacing.sm,
     fontWeight: 700,
-    color: colors.text
+    color: colors.title
   };
 
   const subtitleStyle = {

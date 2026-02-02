@@ -8,8 +8,10 @@
 :root {
   --color-text: #0f172a;
   --color-text-muted: #334155;
+  --color-title: #2C1810;
   --color-link: #2563eb;
   --color-primary: #2563eb;
+  --warm-accent: #D4A574;
   --font-family: 'Inter', sans-serif;
 }
 
@@ -35,30 +37,79 @@ body {
   z-index: 0;
 }
 .app-shell--auth::before {
-  background-image: url('/bg-login.jpeg');
+  background-image: url('/bg-login1.jpeg');
 }
 .app-shell--dashboard::before {
-  background-image: url('/bg-dashboard.jpeg');
+  background-image: url('/bg-login1.jpeg');
 }
 .app-shell::after {
   content: '';
   position: fixed;
   inset: 0;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.25);
   z-index: 1;
+}
+.app-shell--dashboard::after {
+  background: rgba(254, 246, 230, 0.25);
 }
 .app-shell-content {
   position: relative;
   z-index: 2;
   min-height: 100vh;
 }
+.app-shell-content h1,
+.app-shell-content h2,
+.app-shell-content h3 {
+  color: var(--color-title);
+}
 
 .auth-welcome-title {
   margin: 0 0 0.35rem;
   font-size: 1.75rem;
   font-weight: 700;
-  color: var(--color-text);
+  color: var(--color-title);
   text-align: center;
+}
+
+/* Card with organic blob corners (login and dashboard) */
+.card-warm-blobs {
+  position: relative;
+  overflow: visible;
+  width: 100%;
+}
+.app-shell--auth .card-warm-blobs {
+  max-width: 520px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.app-shell--dashboard .card-warm-blobs {
+  max-width: 54rem;   /* or 56rem, 48rem – smaller = narrower card */
+  margin-left: auto;
+  margin-right: auto;
+}
+.card-warm-blobs::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 90px;
+  height: 90px;
+  border-radius: 0 1.25rem 0 60% / 0 60% 0 1.25rem;
+  background: var(--warm-accent);
+  z-index: 0;
+  pointer-events: none;
+}
+.card-warm-blobs::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 90px;
+  height: 90px;
+  border-radius: 60% 0 1.25rem 0 / 1.25rem 0 60% 0;
+  background: var(--warm-accent);
+  z-index: 0;
+  pointer-events: none;
 }
 
 .auth-welcome-subtitle {
@@ -254,7 +305,8 @@ select:focus {
   color: #64748b;
 }
 .dashboard-hero-grid--family {
-  /* Family has 5 cards: 2x2 + 1 on small; 5 in a row on large */
+  /* Family: 5 cards; grid columns set in media queries below */
+  display: grid;
 }
 .dashboard-tabs button {
   min-height: 44px;
@@ -267,22 +319,23 @@ select:focus {
   gap: 0;
 }
 .dashboard-section {
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
 }
 @media (min-width: 600px) {
   .dashboard-hero-grid {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 0.75rem;
+    gap: 1rem;
   }
 }
 @media (min-width: 900px) {
   .dashboard-expanded {
-    max-width: 64rem;
+    max-width: 45rem;
     margin: 0 auto;
     padding: 0 1rem;
   }
   .dashboard-hero-grid {
     grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
   }
   .dashboard-hero-grid--family {
     grid-template-columns: repeat(5, 1fr);
@@ -302,4 +355,3 @@ select:focus {
     grid-template-columns: repeat(3, 1fr);
   }
 }
-

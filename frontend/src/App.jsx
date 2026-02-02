@@ -80,11 +80,13 @@ function MainView() {
       <div className={shellClass}>
         <div className="app-shell-content">
           <PageShell title="Elderly Care" subtitle={subtitle} actions={actions}>
-            <Card>
-              <DashboardLayout currentUser={currentUser} token={token} onLogout={handleLogout}>
-                <Outlet context={outletContext} />
-              </DashboardLayout>
-            </Card>
+            <div className="card-warm-blobs">
+              <Card style={{ maxWidth: 'none' }}>
+                <DashboardLayout currentUser={currentUser} token={token} onLogout={handleLogout}>
+                  <Outlet context={outletContext} />
+                </DashboardLayout>
+              </Card>
+            </div>
           </PageShell>
         </div>
       </div>
@@ -98,42 +100,44 @@ function MainView() {
           isAuthPage
           authNavLabel="Login / Signup"
         >
-          <Card variant="glass">
-            <PWAInstall />
-            <h2 className="auth-welcome-title">Welcome back!</h2>
-            <p className="auth-welcome-subtitle">Sign in to stay connected.</p>
+          <div className="card-warm-blobs">
+            <Card variant="warm">
+              <PWAInstall />
+              <h2 className="auth-welcome-title">Welcome back!</h2>
+              <p className="auth-welcome-subtitle">Sign in to stay connected.</p>
 
-            {authMessage && <p className="info-message">{authMessage}</p>}
+              {authMessage && <p className="info-message">{authMessage}</p>}
 
-            {activeTab === 'login' ? (
-              <LoginForm apiBaseUrl={API_BASE_URL} onSuccess={handleLoginSuccess} />
-            ) : (
-              <>
-                <RegisterForm apiBaseUrl={API_BASE_URL} onRegistered={handleRegistered} />
+              {activeTab === 'login' ? (
+                <LoginForm apiBaseUrl={API_BASE_URL} onSuccess={handleLoginSuccess} />
+              ) : (
+                <>
+                  <RegisterForm apiBaseUrl={API_BASE_URL} onRegistered={handleRegistered} />
+                  <p className="auth-switch">
+                    Already registered?{' '}
+                    <button type="button" className="auth-link" onClick={() => setActiveTab('login')}>
+                      Go to login
+                    </button>
+                  </p>
+                </>
+              )}
+
+              {activeTab === 'login' && (
                 <p className="auth-switch">
-                  Already registered?{' '}
-                  <button type="button" className="auth-link" onClick={() => setActiveTab('login')}>
-                    Go to login
+                  Don&apos;t have an account?{' '}
+                  <button type="button" className="auth-link" onClick={() => setActiveTab('register')}>
+                    Sign Up
                   </button>
                 </p>
-              </>
-            )}
+              )}
 
-            {activeTab === 'login' && (
-              <p className="auth-switch">
-                Don&apos;t have an account?{' '}
-                <button type="button" className="auth-link" onClick={() => setActiveTab('register')}>
-                  Sign Up
-                </button>
-              </p>
-            )}
-
-            {currentUser && (
-              <div style={{ marginTop: '1rem' }}>
-                <Button onClick={handleLogout}>Log out</Button>
-              </div>
-            )}
-          </Card>
+              {currentUser && (
+                <div style={{ marginTop: '1rem' }}>
+                  <Button onClick={handleLogout}>Log out</Button>
+                </div>
+              )}
+            </Card>
+          </div>
         </PageShell>
       </div>
     </div>

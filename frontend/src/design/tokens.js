@@ -13,6 +13,10 @@ export const colors = {
   textPrimary: '#0f172a',
   textMuted: '#334155',
   textSecondary: '#334155',
+  title: '#2C1810',
+  cardYellow: '#F7E798',
+  warmAccent: '#D4A574',
+  warmBg: '#fef6e6',
   borderSubtle: '#94a3b8',
   successBg: '#dcfce7',
   successText: '#166534',
@@ -40,8 +44,8 @@ export const spacing = {
 export const typography = {
   fontFamily: "'Inter', sans-serif",
   baseSize: '20px',
-  heading1: '2.1rem',
-  heading2: '1.6rem',
+  heading1: '2.25rem',
+  heading2: '1.75rem',
   heading3: '1.25rem'
 };
 
