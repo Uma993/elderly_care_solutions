@@ -26,7 +26,7 @@ import ElderProfilePage from './pages/ElderProfilePage.jsx';
 import CalendarPage from './pages/CalendarPage.jsx';
 import TimelinePage from './pages/TimelinePage.jsx';
 import InactivityPage from './pages/InactivityPage.jsx';
-import WeatherPage from './pages/WeatherPage.jsx';
+import EmotionCheckPage from './pages/EmotionCheckPage.jsx';
 
 function MainView() {
   const location = useLocation();
@@ -35,8 +35,6 @@ function MainView() {
   const [currentUser, setCurrentUser] = useState(null);
   const [token, setToken] = useState(null);
   const [authMessage, setAuthMessage] = useState('');
-  const [showAddElderModal, setShowAddElderModal] = useState(false);
-
   useEffect(() => {
     if (location.search.includes('from=reminder')) {
       playReminderBell();
@@ -63,7 +61,7 @@ function MainView() {
   const handleRegistered = (data) => {
     if (data?.user?.role === 'family') {
       handleLoginSuccess(data.user, data.message, data.token);
-      setShowAddElderModal(true);
+      navigate('/overview');
     } else {
       setAuthMessage(data?.message || 'Registration successful. You can now log in.');
       setActiveTab('login');
@@ -94,8 +92,6 @@ function MainView() {
                   currentUser={currentUser}
                   token={token}
                   onLogout={handleLogout}
-                  showAddElderModal={showAddElderModal}
-                  setShowAddElderModal={setShowAddElderModal}
                 >
                   <Outlet context={outletContext} />
                 </DashboardLayout>
@@ -177,7 +173,7 @@ function App() {
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="timeline" element={<TimelinePage />} />
         <Route path="routine" element={<RoutinePage />} />
-        <Route path="weather" element={<WeatherPage />} />
+        <Route path="emotion-check" element={<EmotionCheckPage />} />
       </Route>
     </Routes>
   );

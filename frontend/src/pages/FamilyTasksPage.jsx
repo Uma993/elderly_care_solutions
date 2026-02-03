@@ -103,19 +103,6 @@ function FamilyTasksPage() {
 
   return (
     <div>
-      <Link
-        to="/"
-        style={{
-          display: 'inline-block',
-          marginBottom: '1rem',
-          fontSize: '1rem',
-          color: colors.primary,
-          textDecoration: 'none',
-          fontWeight: 500
-        }}
-      >
-        Back to Dashboard
-      </Link>
       <h2 style={{ marginTop: 0, fontSize: '1.5rem', textAlign: 'center' }}>Tasks</h2>
       {loadError && <p style={{ color: colors.errorText, marginBottom: '1rem' }}>{loadError}</p>}
       {!hasElder ? (

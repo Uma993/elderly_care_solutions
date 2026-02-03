@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import DayStrip from '../components/calendar/DayStrip.jsx';
 import DailyTimeline from '../components/calendar/DailyTimeline.jsx';
 import FAB from '../components/calendar/FAB.jsx';
@@ -197,7 +197,6 @@ function TimelinePage() {
   if (currentUser.role === 'family' && !selectedElderId) {
     return (
       <div>
-        <Link to="/" style={{ fontSize: '1rem', color: colors.primary, marginBottom: '1rem', display: 'inline-block' }}>← Back to Dashboard</Link>
         <p>Select an elder from the dashboard to view their timeline.</p>
       </div>
     );
@@ -205,7 +204,6 @@ function TimelinePage() {
 
   return (
     <div>
-      <Link to="/" style={{ fontSize: '1rem', color: colors.primary, marginBottom: '1rem', display: 'inline-block' }}>← Back to Dashboard</Link>
       <h2 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.5rem', fontWeight: 700, textAlign: 'center' }}>Timeline</h2>
       <p style={{ marginTop: 0, marginBottom: '1rem', color: colors.textMuted, fontSize: '0.95rem', textAlign: 'center' }}>
         {isElder ? 'Your day at a glance. Mark done in Overview or via voice.' : "Elder's day at a glance."}

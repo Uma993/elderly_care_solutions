@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useOutletContext } from 'react-router-dom';
 import DayStrip from '../components/calendar/DayStrip.jsx';
 import DailyTimeline from '../components/calendar/DailyTimeline.jsx';
@@ -196,19 +195,6 @@ function ElderTasksPage() {
 
   return (
     <div>
-      <Link
-        to="/"
-        style={{
-          display: 'inline-block',
-          marginBottom: '1rem',
-          fontSize: '1rem',
-          color: colors.primary,
-          textDecoration: 'none',
-          fontWeight: 500
-        }}
-      >
-        Back to Dashboard
-      </Link>
       <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.5rem', fontWeight: 700, textAlign: 'center' }}>Today&apos;s Tasks & Timeline</h2>
       {addReminderAction.status === ACTION_STATUS.SUCCESS && <p className="info-message" style={{ marginBottom: '0.75rem' }}>Reminder added.</p>}
       {addReminderAction.status === ACTION_STATUS.ERROR && <p style={{ marginBottom: '0.75rem', color: colors.errorText, fontSize: '0.95rem' }}>{addReminderAction.error}</p>}

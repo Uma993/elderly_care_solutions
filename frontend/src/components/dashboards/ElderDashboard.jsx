@@ -162,18 +162,18 @@ function ElderDashboard({ currentUser, token, onLogout }) {
         </button>
         <button
           type="button"
-          onClick={() => navigate('/weather')}
-          style={heroCardStyle('#0ea5e9')}
-          aria-label="Weather"
-          className={hoverSegment === 'weather' ? 'dashboard-hero-card--hover' : ''}
-          onMouseEnter={() => onEnter('weather')}
+          onClick={() => navigate('/emotion-check')}
+          style={heroCardStyle('#ec4899')}
+          aria-label="Emotion Check"
+          className={hoverSegment === 'emotionCheck' ? 'dashboard-hero-card--hover' : ''}
+          onMouseEnter={() => onEnter('emotionCheck')}
           onMouseLeave={onLeave}
-          onFocus={() => onEnter('weather')}
+          onFocus={() => onEnter('emotionCheck')}
           onBlur={onLeave}
           tabIndex={0}
         >
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19H9a7 7 0 116.71-9h1.79a4.5 4.5 0 110 9z"/></svg>
-          Weather
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+          Emotion Check
         </button>
         <button
           type="button"

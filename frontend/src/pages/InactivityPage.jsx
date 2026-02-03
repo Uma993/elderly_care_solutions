@@ -35,9 +35,6 @@ function InactivityPage() {
 
   return (
     <div>
-      <Link to="/" style={{ fontSize: '1rem', color: colors.primary, marginBottom: '1rem', display: 'inline-block' }}>
-        ← Back to Dashboard
-      </Link>
       <h2 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.5rem', fontWeight: 700, textAlign: 'center' }}>Inactivity status</h2>
       <p style={{ marginTop: 0, marginBottom: '1rem', color: colors.textMuted, fontSize: '0.95rem' }}>
         See when each elder was last active. Check in on anyone inactive for more than 24 hours.

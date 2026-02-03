@@ -14,7 +14,7 @@ export const colors = {
   textMuted: '#334155',
   textSecondary: '#334155',
   title: '#2C1810',
-  cardYellow: '#F7E798',
+  cardYellow: '#fef6e6',
   warmAccent: '#D4A574',
   warmBg: '#fef6e6',
   borderSubtle: '#94a3b8',

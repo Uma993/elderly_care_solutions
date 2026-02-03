@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import {
   LineChart,
   Line,
@@ -69,9 +69,6 @@ function RoutinePage() {
   if (currentUser.role === 'family' && !selectedElderId) {
     return (
       <div>
-        <Link to="/" style={{ fontSize: '1rem', color: colors.primary, marginBottom: '1rem', display: 'inline-block' }}>
-          ← Back to Dashboard
-        </Link>
         <p style={{ color: colors.textMuted }}>Select an elder from the dashboard to view their routine.</p>
       </div>
     );
@@ -84,9 +81,6 @@ function RoutinePage() {
 
   return (
     <div>
-      <Link to="/" style={{ fontSize: '1rem', color: colors.primary, marginBottom: '1rem', display: 'inline-block' }}>
-        ← Back to Dashboard
-      </Link>
       <h2 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.5rem', textAlign: 'center' }}>Routine summary</h2>
       <p style={{ marginTop: 0, marginBottom: '1rem', color: colors.textMuted }}>
         Medicine adherence, task completion, and overall score over time (0–100).

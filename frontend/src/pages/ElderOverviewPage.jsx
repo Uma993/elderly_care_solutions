@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import Button from '../components/ui/Button.jsx';
 import Tag from '../components/ui/Tag.jsx';
 import VoiceAssistant from '../components/VoiceAssistant.jsx';
@@ -382,7 +382,6 @@ function ElderOverviewPage() {
 
   return (
     <div style={{ position: 'relative' }}>
-      <Link to="/" style={{ fontSize: '1rem', color: colors.primary, marginBottom: '1rem', display: 'inline-block' }}>← Back to Dashboard</Link>
       <button
         type="button"
         onClick={() => setShowSettings(true)}

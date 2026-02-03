@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import Button from '../components/ui/Button.jsx';
 import { colors, radii, spacing } from '../design/tokens';
 import { API_BASE_URL, getAuthHeaders } from '../api';
@@ -239,9 +239,6 @@ function ElderProfilePage() {
   if (loading) {
     return (
       <div>
-        <Link to="/" style={{ display: 'inline-block', marginBottom: '1rem', color: colors.primary, textDecoration: 'none', fontWeight: 500 }}>
-          Back to Dashboard
-        </Link>
         <p style={{ color: colors.textMuted }}>Loading profile…</p>
       </div>
     );
@@ -251,9 +248,6 @@ function ElderProfilePage() {
 
   return (
     <div>
-      <Link to="/" style={{ display: 'inline-block', marginBottom: '1rem', color: colors.primary, textDecoration: 'none', fontWeight: 500 }}>
-        Back to Dashboard
-      </Link>
       <h2 style={{ marginTop: 0, fontSize: '1.5rem', textAlign: 'center' }}>Profile</h2>
 
       {!showForm ? (

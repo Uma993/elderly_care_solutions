@@ -7,5 +7,5 @@ import { Platform } from 'react-native';
  */
 export const API_BASE_URL =
   Platform.OS === 'android'
-    ? 'http://192.168.42.73:4000/api'
+    ? 'http://10.50.252.135:4000/api'
     : 'http://localhost:4000/api';

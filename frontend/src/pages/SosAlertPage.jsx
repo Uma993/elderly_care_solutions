@@ -70,18 +70,6 @@ function SosAlertPage() {
           </a>
         </div>
       )}
-      <a
-        href="/"
-        style={{
-          display: 'inline-block',
-          marginTop: '2rem',
-          padding: '0.5rem 1rem',
-          color: 'rgba(255,255,255,0.9)',
-          textDecoration: 'underline'
-        }}
-      >
-        Back to app
-      </a>
     </div>
   );
 }

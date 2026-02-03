@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useOutletContext } from 'react-router-dom';
 import Button from '../components/ui/Button.jsx';
 import VoiceAssistant from '../components/VoiceAssistant.jsx';
@@ -14,19 +13,6 @@ function VoiceAssistantPage() {
 
   return (
     <div>
-      <Link
-        to="/"
-        style={{
-          display: 'inline-block',
-          marginBottom: '1rem',
-          fontSize: '1rem',
-          color: colors.primary,
-          textDecoration: 'none',
-          fontWeight: 500
-        }}
-      >
-        Back to Dashboard
-      </Link>
       {showWellbeingCheck && (
         <WellbeingCheck
           token={token}

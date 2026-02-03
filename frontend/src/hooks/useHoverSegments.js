@@ -31,7 +31,7 @@ export const ELDER_SEGMENT_TOOLTIPS = {
   routine: 'View routine summary and trends',
   calendar: 'View calendar and daily timeline',
   timeline: 'View day strip and timeline',
-  weather: 'Check today\'s weather and walking tips',
+  emotionCheck: 'Check emotional wellbeing with face analysis',
   voice: 'Request help with voice',
   sos: 'SOS Emergency – get help fast'
 };

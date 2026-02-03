@@ -1,5 +1,4 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { useOutletContext } from 'react-router-dom';
 import Button from '../components/ui/Button.jsx';
 import { colors } from '../design/tokens';
@@ -45,19 +44,6 @@ function SosPage() {
   if (currentUser.role !== 'elderly') {
     return (
       <div>
-        <Link
-          to="/"
-          style={{
-            display: 'inline-block',
-            marginBottom: '1rem',
-            fontSize: '1rem',
-            color: colors.primary,
-            textDecoration: 'none',
-            fontWeight: 500
-          }}
-        >
-          Back to Dashboard
-        </Link>
         <p style={{ color: colors.textMuted }}>This page is for elders. Use SOS Alerts from your dashboard to see alerts.</p>
       </div>
     );
@@ -65,19 +51,6 @@ function SosPage() {
 
   return (
     <div>
-      <Link
-        to="/"
-        style={{
-          display: 'inline-block',
-          marginBottom: '1rem',
-          fontSize: '1rem',
-          color: colors.primary,
-          textDecoration: 'none',
-          fontWeight: 500
-        }}
-      >
-        Back to Dashboard
-      </Link>
       <section style={{ marginBottom: '1.5rem' }}>
         <h3 style={{ marginTop: 0, fontSize: '1.2rem' }}>Need quick help?</h3>
         <p style={{ marginTop: '0.2rem', marginBottom: '0.9rem', color: colors.textMuted, fontSize: '1.05rem' }}>

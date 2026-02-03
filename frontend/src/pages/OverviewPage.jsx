@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import Button from '../components/ui/Button.jsx';
 import Tag from '../components/ui/Tag.jsx';
 import AddElderProfileModal from '../components/AddElderProfileModal.jsx';
@@ -74,19 +74,6 @@ function OverviewPage() {
 
   return (
     <div>
-      <Link
-        to="/"
-        style={{
-          display: 'inline-block',
-          marginBottom: '1rem',
-          fontSize: '1rem',
-          color: colors.primary,
-          textDecoration: 'none',
-          fontWeight: 500
-        }}
-      >
-        Back to Dashboard
-      </Link>
       <h2 style={{ marginTop: 0, fontSize: '1.5rem', textAlign: 'center' }}>Elder overview</h2>
       {loadError && (
         <p style={{ color: colors.errorText, marginBottom: '1rem', fontSize: '1rem' }}>{loadError}</p>

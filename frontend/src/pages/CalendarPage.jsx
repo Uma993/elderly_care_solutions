@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import MonthCalendar from '../components/calendar/MonthCalendar.jsx';
 import { timelineTheme, radii } from '../design/tokens';
 import { getElderDashboardData } from '../firebase/dashboardData.js';
@@ -135,7 +135,6 @@ function CalendarPage() {
   if (currentUser.role === 'family' && !selectedElderId) {
     return (
       <div>
-        <Link to="/" style={{ fontSize: '1rem', color: '#6366f1', marginBottom: '1rem', display: 'inline-block' }}>← Back to Dashboard</Link>
         <p>Select an elder from the dashboard to view their calendar.</p>
       </div>
     );
@@ -143,7 +142,6 @@ function CalendarPage() {
 
   return (
     <div>
-      <Link to="/" style={{ fontSize: '1rem', color: '#6366f1', marginBottom: '1rem', display: 'inline-block' }}>← Back to Dashboard</Link>
       <h2 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.5rem', fontWeight: 700, textAlign: 'center' }}>Calendar</h2>
       <p style={{ marginTop: 0, marginBottom: '1rem', color: '#64748b', fontSize: '0.95rem', textAlign: 'center' }}>
         {isElder ? 'Your medicines and tasks by date.' : 'Elder\'s medicines and tasks by date.'}
